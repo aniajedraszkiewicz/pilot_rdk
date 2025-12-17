@@ -41,4 +41,6 @@ Automated tests verifying correctness, stability, and reproducibility.
 From the repository root:
 
 ```bash
-python experiment_files/main.py
+python -m experiment_files.experiment
+
+
