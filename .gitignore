@@ -1,0 +1,75 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Virtual environments
+# =========================
+venv/
+.venv/
+psychopy_venv/
+
+# =========================
+# Packaging / builds
+# =========================
+build/
+dist/
+*.egg-info/
+
+# =========================
+# OS / editor
+# =========================
+.DS_Store
+.vscode/
+
+# =========================
+# Pytest / coverage
+# =========================
+.pytest_cache/
+.cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Local logs / debug outputs
+# =========================
+debug_logs/
+logs/
+
+# =========================
+# Experiment outputs (DO NOT COMMIT)
+# =========================
+experiment_files/results/
+experiment_files/debug_plots/
+experiment_files/tmp/
+
+# Common output artifacts anywhere
+*_summary.txt
+*_thresholds.png
+*.csv
+
+# If you ever want to track specific CSVs, add explicit negations below.
+
+# =========================
+# PsychoPy artifacts (DO NOT COMMIT)
+# =========================
+*.psydat
+*.psyexp
+*.log
+
+# PsychoPy autosaves inside data (keep trial definitions)
+experiment_files/data/*.psydat
+experiment_files/data/*.psyexp
+
+# Keep the trials definition CSV
+!experiment_files/data/trials_exp.csv
+

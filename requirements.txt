@@ -1,0 +1,13 @@
+# ============================================
+# RDK Experiment — Dependencies
+# Tested with Python 3.10.17
+# PsychoPy 2025.2.1 requires Python <3.12
+# ============================================
+
+psychopy==2025.2.1       # Experimental framework and stimuli presentation
+numpy==2.2.6             # Numerical operations
+pandas==2.3.1            # Data handling
+matplotlib==3.10.3       # Visualization and plotting
+pytest==9.0.0            # Unit and integration testing
+msgpack-numpy==0.4.8     # Efficient data serialization (used in RDK code)
+
