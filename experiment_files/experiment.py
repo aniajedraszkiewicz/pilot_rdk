@@ -83,10 +83,15 @@ class Experiment:
     # Define the fields shown in the startup GUI dialog 
     def __init__(self):
         self.expInfo = {
-        'participant': '',
-        'monitor': ['MacBookDisplay', 'OtherDisplay']
-    }
+        "participant": "",
+        "monitor": ["MacBookDisplay", "Custom"],
+        "screen_width_cm": "53.0",
+        "viewing_distance_cm": "60.0",
+        "resolution_x_px": "1920",
+        "resolution_y_px": "1080"
+}
 
+    
     # Run all preparation steps in a fixed order (GUI → Window → calibration → stimulus)
     def setup(self):
         self.collect_participant_info()
@@ -105,6 +110,10 @@ class Experiment:
         # Store choices from the dialog
         self.monitor_choice = self.expInfo['monitor']
         self.subject_id = self.expInfo['participant'].strip() or "UNKNOWN"
+        self.screen_width_cm = self.expInfo.get("screen_width_cm", "")
+        self.viewing_distance_cm = self.expInfo.get("viewing_distance_cm", "")
+        self.resolution_x_px = self.expInfo.get("resolution_x_px", "")
+        self.resolution_y_px = self.expInfo.get("resolution_y_px", "")
 
         # Prepare output location and a unique filename. Results are stored in ./results relative to the script directory
         os.makedirs("results", exist_ok=True)
@@ -128,12 +137,26 @@ class Experiment:
             print("Using monitor profile: MacBookDisplay")
 
         else:
-            # Default monitor profile used when running on a non-MacBook display
-            mon = monitors.Monitor('OtherDisplay')
-            mon.setWidth(53.0)
-            mon.setDistance(60.0)
-            mon.setSizePix((1920, 1080))
-            print("Using OtherDisplay profile (safe defaults).")
+            # Custom monitor profile: values typed by the participant in the GUI
+            try:
+                screen_width_cm = float(self.expInfo["screen_width_cm"].replace(",", "."))
+                viewing_distance_cm = float(self.expInfo["viewing_distance_cm"].replace(",", "."))
+                resolution_x_px = int(self.expInfo["resolution_x_px"])
+                resolution_y_px = int(self.expInfo["resolution_y_px"])
+            except Exception:
+                print("ERROR: Please enter valid monitor values (e.g., 53.0, 60.0, 1920, 1080).")
+                core.quit()
+
+       
+
+            # Reuse a single saved profile name: "Custom"
+            mon = monitors.Monitor("Custom")
+            mon.setWidth(screen_width_cm)                         # cm
+            mon.setDistance(viewing_distance_cm)                  # cm
+            mon.setSizePix((resolution_x_px, resolution_y_px))    # px
+            mon.save()
+
+            print("Using monitor profile: Custom (participant-entered values).")
 
         # Create the PsychoPy Window (units='deg' requires a valid Monitor geometry)
         self.win = visual.Window(
@@ -141,11 +164,15 @@ class Experiment:
             size=mon.getSizePix(), # window resolution (should match the monitor profile)
             units='deg',
             color='black',
-            fullscr=False,
+            fullscr=True,
             waitBlanking=True,   # try to sync flips to the monitor refresh (vsync) for more stable frame timing
             useFBO=True,         # off-screen rendering; improves frame timing stability on this MacBook
         )
 
+        # Debug print for reports like "instructions clipped / stimulus off-screen"
+        print(f"[WINDOW] win.size(px)={self.win.size}, mon.sizePix={mon.getSizePix()}")
+
+        
         # Warm up display timing before any measurements.
         # The first few screen updates can be unstable, so we flip the window
         # several times to let timing settle before measuring refresh rate
@@ -274,6 +301,9 @@ class Experiment:
             f.write(self._line("Monitor:", self.monitor_choice))
             f.write(self._line("Window backend:", prefs.general["winType"]))
             f.write(self._line("Keyboard backend:", prefs.hardware["keyboard"]))
+            f.write(self._line("Screen width (cm):", self.screen_width_cm))
+            f.write(self._line("Viewing distance (cm):", self.viewing_distance_cm))
+            f.write(self._line("Resolution (px):", f"{self.resolution_x_px} x {self.resolution_y_px}"))
 
         print(f"\n Summary saved to: {os.path.abspath(summary_path)}")
 
