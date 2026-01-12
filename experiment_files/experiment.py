@@ -11,6 +11,19 @@ os.environ["PSYCHOPY_NO_PTBOXLIB"] = "1"    # avoid PTB if it causes issues on y
 # Make relative paths (e.g., results/) stable by running from this script's folder
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+# Auto-detect screen resolution
+try:
+    import tkinter as tk
+    root = tk.Tk()
+    root.withdraw()
+    screen_width_px = root.winfo_screenwidth()
+    screen_height_px = root.winfo_screenheight()
+    root.destroy()
+except Exception:
+    screen_width_px = 1920
+    screen_height_px = 1080
+detected_display_label = f"Auto ({screen_width_px}x{screen_height_px})"
+
 import psychopy
 from psychopy import visual, monitors, core, gui, prefs
 from psychopy.hardware import keyboard
@@ -84,11 +97,11 @@ class Experiment:
     def __init__(self):
         self.expInfo = {
         "participant": "",
-        "monitor": ["MacBookDisplay", "Custom"],
+        "monitor": [detected_display_label, "Custom"],
         "screen_width_cm": "53.0",
         "viewing_distance_cm": "60.0",
-        "resolution_x_px": "1920",
-        "resolution_y_px": "1080"
+        "resolution_x_px": str(screen_width_px),
+        "resolution_y_px": str(screen_height_px)
 }
 
     
@@ -110,10 +123,6 @@ class Experiment:
         # Store choices from the dialog
         self.monitor_choice = self.expInfo['monitor']
         self.subject_id = self.expInfo['participant'].strip() or "UNKNOWN"
-        self.screen_width_cm = self.expInfo.get("screen_width_cm", "")
-        self.viewing_distance_cm = self.expInfo.get("viewing_distance_cm", "")
-        self.resolution_x_px = self.expInfo.get("resolution_x_px", "")
-        self.resolution_y_px = self.expInfo.get("resolution_y_px", "")
 
         # Prepare output location and a unique filename. Results are stored in ./results relative to the script directory
         os.makedirs("results", exist_ok=True)
@@ -122,41 +131,40 @@ class Experiment:
     
     # Create a monitor profile and the PsychoPy Window 
     def create_window_and_monitor(self):
-        if self.monitor_choice == "MacBookDisplay":
-            # Create the MacBookDisplay Monitor profile if it doesn't exist yet.
-            # This stores screen geometry for deg↔pix conversion when units='deg')
-            if "MacBookDisplay" not in monitors.getAllMonitors():
-                mon = monitors.Monitor("MacBookDisplay")
-                mon.setWidth(30.41)          # cm 
-                mon.setDistance(60.0)        # cm 
-                mon.setSizePix((1440, 900))  # macOS logical resolution
-                mon.save()
-            
-            # Load the saved profile
-            mon = monitors.Monitor("MacBookDisplay")
-            print("Using monitor profile: MacBookDisplay")
+        # Parse geometry inputs (shared by both auto and custom; auto overrides resolution below)
+        try:
+            screen_width_cm = float(self.expInfo["screen_width_cm"].replace(",", "."))
+            viewing_distance_cm = float(self.expInfo["viewing_distance_cm"].replace(",", "."))
+            resolution_x_px = int(self.expInfo["resolution_x_px"])
+            resolution_y_px = int(self.expInfo["resolution_y_px"])
+        except Exception:
+            print("ERROR: Please enter valid monitor values (e.g., 53.0, 60.0, 1920, 1080).")
+            core.quit()
 
+        if self.monitor_choice == detected_display_label:
+            # Auto-detected resolution; keep user-provided physical geometry for deg↔pix
+            resolution_x_px = screen_width_px
+            resolution_y_px = screen_height_px
+            mon = monitors.Monitor("AutoDetected")
+            mon.setWidth(screen_width_cm)
+            mon.setDistance(viewing_distance_cm)
+            mon.setSizePix((resolution_x_px, resolution_y_px))
+            mon.save()
+            print(f"Using monitor profile: AutoDetected ({detected_display_label}).")
         else:
             # Custom monitor profile: values typed by the participant in the GUI
-            try:
-                screen_width_cm = float(self.expInfo["screen_width_cm"].replace(",", "."))
-                viewing_distance_cm = float(self.expInfo["viewing_distance_cm"].replace(",", "."))
-                resolution_x_px = int(self.expInfo["resolution_x_px"])
-                resolution_y_px = int(self.expInfo["resolution_y_px"])
-            except Exception:
-                print("ERROR: Please enter valid monitor values (e.g., 53.0, 60.0, 1920, 1080).")
-                core.quit()
-
-       
-
-            # Reuse a single saved profile name: "Custom"
             mon = monitors.Monitor("Custom")
             mon.setWidth(screen_width_cm)                         # cm
             mon.setDistance(viewing_distance_cm)                  # cm
             mon.setSizePix((resolution_x_px, resolution_y_px))    # px
             mon.save()
-
             print("Using monitor profile: Custom (participant-entered values).")
+
+        # Store final values as instance attributes for write_summary
+        self.screen_width_cm = screen_width_cm
+        self.viewing_distance_cm = viewing_distance_cm
+        self.resolution_x_px = resolution_x_px
+        self.resolution_y_px = resolution_y_px
 
         # Create the PsychoPy Window (units='deg' requires a valid Monitor geometry)
         self.win = visual.Window(

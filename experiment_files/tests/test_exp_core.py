@@ -44,6 +44,7 @@ class FakeWindow:
         self.kwargs = kwargs
         self.units = kwargs.get("units")
         self.color = kwargs.get("color")
+        self.size = (1440, 900)  # default fake size
         self._flip_calls = 0
         self._flip_clock = kwargs.get("_flip_clock", None)
 
@@ -123,22 +124,8 @@ class FakeBlock:
         }
 
 
-# =========================
-# Fixture: safe import
-# =========================
-
-@pytest.fixture()
-def exp_mod(monkeypatch):
-    """
-    Import experiment_files.experiment safely by stubbing:
-    - psychopy and its submodules (including psychopy.data)
-    - experiment_files.block and experiment_files.rdk_stim (so real files aren't imported)
-    - os.chdir at import-time (so tests don't change cwd)
-    """
-    # Prevent import-time os.chdir(...) from changing pytest cwd
-    monkeypatch.setattr(os, "chdir", lambda *_a, **_k: None)
-
-    # -------- Fake psychopy tree --------
+def install_fake_psychopy(monkeypatch):
+    """Install a minimal fake psychopy module tree into sys.modules."""
     psychopy = ModuleType("psychopy")
     psychopy.__version__ = "FAKE-PSYCHOPY"
 
@@ -160,15 +147,13 @@ def exp_mod(monkeypatch):
     visual = SimpleNamespace(Window=FakeWindow)
     psychopy.visual = visual
 
-    # IMPORTANT: provide psychopy.data because block.py imports it
-    data = SimpleNamespace()  # we don't need any functions for these tests
+    data = SimpleNamespace()
     psychopy.data = data
 
     keyboard_mod = SimpleNamespace(Keyboard=FakeKeyboard)
     hardware = SimpleNamespace(keyboard=keyboard_mod)
     psychopy.hardware = hardware
 
-    # Inject psychopy into sys.modules so "from psychopy import ..." works
     monkeypatch.setitem(sys.modules, "psychopy", psychopy)
     monkeypatch.setitem(sys.modules, "psychopy.prefs", prefs)
     monkeypatch.setitem(sys.modules, "psychopy.core", core)
@@ -178,6 +163,27 @@ def exp_mod(monkeypatch):
     monkeypatch.setitem(sys.modules, "psychopy.data", data)
     monkeypatch.setitem(sys.modules, "psychopy.hardware", hardware)
     monkeypatch.setitem(sys.modules, "psychopy.hardware.keyboard", keyboard_mod)
+
+    return psychopy
+
+
+# =========================
+# Fixture: safe import
+# =========================
+
+@pytest.fixture()
+def exp_mod(monkeypatch):
+    """
+    Import experiment_files.experiment safely by stubbing:
+    - psychopy and its submodules (including psychopy.data)
+    - experiment_files.block and experiment_files.rdk_stim (so real files aren't imported)
+    - os.chdir at import-time (so tests don't change cwd)
+    """
+    # Prevent import-time os.chdir(...) from changing pytest cwd
+    monkeypatch.setattr(os, "chdir", lambda *_a, **_k: None)
+
+    # -------- Fake psychopy tree --------
+    install_fake_psychopy(monkeypatch)
 
     # -------- Stub your internal modules imported at top-level --------
     # experiment.py does: from .block import Block ; from .rdk_stim import RDK
@@ -214,13 +220,14 @@ def test_import_sets_expected_prefs_and_env(exp_mod):
 
 def test_create_window_and_monitor_warms_up_flips(exp_mod):
     exp = exp_mod.Experiment()
-    exp.monitor_choice = "MacBookDisplay"
+    # Use "Custom" to avoid depending on detected_display_label which changes per system
+    exp.monitor_choice = "Custom"
 
     exp.create_window_and_monitor()
 
     assert exp.win is not None
     assert exp.win.units == "deg"
-    assert exp.win.kwargs["fullscr"] is False
+    assert exp.win.kwargs["fullscr"] is True
     assert exp.win.kwargs["waitBlanking"] is True
     assert exp.win.kwargs["useFBO"] is True
     assert exp.win._flip_calls >= 120
@@ -277,8 +284,14 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     exp = exp_mod.Experiment()
 
     exp.subject_id = "S01"
-    exp.monitor_choice = "MacBookDisplay"
+    exp.monitor_choice = "Custom"
     exp.results_csv_path = str(tmp_path / "S01_20250101_000000.csv")
+
+    # These are set by create_window_and_monitor but we need them for write_summary
+    exp.screen_width_cm = 53.0
+    exp.viewing_distance_cm = 60.0
+    exp.resolution_x_px = 1920
+    exp.resolution_y_px = 1080
 
     exp.measured_rate = 120.0
     exp.DESIGN_RATE = 60.0
@@ -313,3 +326,52 @@ def test_plot_diagnostics_saves_png(tmp_path, exp_mod):
     out = base + "_thresholds.png"
     assert os.path.exists(out)
     assert os.path.getsize(out) > 0
+
+
+def test_auto_resolution_defaults_use_detected_screen(monkeypatch):
+    # Ensure a clean import of experiment_files.experiment
+    mod_name = "experiment_files.experiment"
+    for name in [mod_name, "experiment_files.block", "experiment_files.rdk_stim", "tkinter"]:
+        sys.modules.pop(name, None)
+
+    # Do not change cwd during import
+    monkeypatch.setattr(os, "chdir", lambda *_a, **_k: None)
+
+    # Fake tkinter with predictable screen dimensions
+    class _FakeTk:
+        def withdraw(self):
+            return None
+        def winfo_screenwidth(self):
+            return 1600
+        def winfo_screenheight(self):
+            return 900
+        def destroy(self):
+            return None
+
+    fake_tk = SimpleNamespace(Tk=_FakeTk)
+    monkeypatch.setitem(sys.modules, "tkinter", fake_tk)
+
+    # Install fake psychopy tree and internal modules
+    install_fake_psychopy(monkeypatch)
+
+    fake_block_mod = ModuleType("experiment_files.block")
+    fake_block_mod.Block = FakeBlock
+    monkeypatch.setitem(sys.modules, "experiment_files.block", fake_block_mod)
+
+    fake_rdk_mod = ModuleType("experiment_files.rdk_stim")
+    fake_rdk_mod.RDK = FakeRDK
+    monkeypatch.setitem(sys.modules, "experiment_files.rdk_stim", fake_rdk_mod)
+
+    mod = importlib.import_module(mod_name)
+
+    assert mod.screen_width_px == 1600
+    assert mod.screen_height_px == 900
+    assert mod.detected_display_label == "Auto (1600x900)"
+
+    exp = mod.Experiment()
+    assert exp.expInfo["monitor"][0] == mod.detected_display_label
+    assert exp.expInfo["resolution_x_px"] == "1600"
+    assert exp.expInfo["resolution_y_px"] == "900"
+
+    # Clean up for subsequent tests
+    sys.modules.pop(mod_name, None)
