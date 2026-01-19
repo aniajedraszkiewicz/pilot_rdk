@@ -4,7 +4,7 @@
 # PsychoPy reads some settings at import-time, so environment variables that affect
 # backends must be set BEFORE importing psychopy.
 
-import os, sys
+import os, sys, re
 os.environ["PSYCHOPY_USE_IOHUB"] = "True"   # use ioHub (reliable keyboard + timing)
 os.environ["PSYCHOPY_NO_PTBOXLIB"] = "1"    # avoid PTB if it causes issues on your setup
 
@@ -66,14 +66,12 @@ def plot_diagnostics(diagnostics, base_path):
     fig.savefig(base_path + "_thresholds.png")
     plt.close(fig)
 
-
-
 class Experiment:
     """
     This class is a high-level experiment controller. It is responsible for:
-    - collecting basic info about the participant (e.g., ID) and monitor choice
+    - collecting basic info about the participant (e.g., ID) 
     - creating the PsychoPy Monitor/Window (units='deg' depend on correct monitor geometry)
-    - stabilizing display timing before calibration (warm-up flips) and measuring the refresh rate
+    - measuring the refresh rate
     - defining stimulus parameters (e.g., dot speed, dot density) and applying refresh-rate corrections when needed
     - enabling/disabling debug output for timing and frame-by-frame diagnostics
     - running the experiment block(s)
@@ -84,11 +82,9 @@ class Experiment:
     def __init__(self):
         self.expInfo = {
         "participant": "",
-        "monitor": ["MacBookDisplay", "Custom"],
         "screen_width_cm": "53.0",
-        "viewing_distance_cm": "60.0",
-        "resolution_x_px": "1920",
-        "resolution_y_px": "1080"
+        "viewing_distance_cm": "57.0",
+        "fullscr": [True, False],
 }
 
     
@@ -99,87 +95,98 @@ class Experiment:
         self.measure_and_define_parameters()
         self.initialize_stimulus_and_load_trials()
 
-    # Collect participant ID + monitor choice and create output file paths
+    # Collect participant ID and create output file paths
     def collect_participant_info(self):
+        print(
+            "\n[NOTE] Fullscreen is required for accurate visual-angle (deg) calibration. "
+            "Windowed mode should be used for debugging only.\n"
+        )
        
         # Show GUI; user inputs are written back into self.expInfo
         dlg = gui.DlgFromDict(self.expInfo, title='RDK Display Settings')
         if not dlg.OK:
             core.quit()
 
-        # Store choices from the dialog
-        self.monitor_choice = self.expInfo['monitor']
-        self.subject_id = self.expInfo['participant'].strip() or "UNKNOWN"
-        self.screen_width_cm = self.expInfo.get("screen_width_cm", "")
-        self.viewing_distance_cm = self.expInfo.get("viewing_distance_cm", "")
-        self.resolution_x_px = self.expInfo.get("resolution_x_px", "")
-        self.resolution_y_px = self.expInfo.get("resolution_y_px", "")
+        # Store choices from the dialog. This removes characters forbidden by Windows filesystems
+        # and strips trailing dots or spaces, which can also cause file-saving errors.
+        raw = str(self.expInfo.get("participant", "")).strip() or "UNKNOWN"
+        self.subject_id = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", raw).strip().strip(".") or "UNKNOWN"
+
+        # Store fullscreen choice.
+        self.fullscr = bool(self.expInfo.get("fullscr", True))
 
         # Prepare output location and a unique filename. Results are stored in ./results relative to the script directory
         os.makedirs("results", exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.results_csv_path = os.path.join("results", f"{self.subject_id}_{stamp}.csv")
     
-    # Create a monitor profile and the PsychoPy Window 
+    # Create a PsychoPy Monitor (geometry container) and the PsychoPy Window
     def create_window_and_monitor(self):
-        if self.monitor_choice == "MacBookDisplay":
-            # Create the MacBookDisplay Monitor profile if it doesn't exist yet.
-            # This stores screen geometry for deg↔pix conversion when units='deg')
-            if "MacBookDisplay" not in monitors.getAllMonitors():
-                mon = monitors.Monitor("MacBookDisplay")
-                mon.setWidth(30.41)          # cm 
-                mon.setDistance(60.0)        # cm 
-                mon.setSizePix((1440, 900))  # macOS logical resolution
-                mon.save()
-            
-            # Load the saved profile
-            mon = monitors.Monitor("MacBookDisplay")
-            print("Using monitor profile: MacBookDisplay")
+        # Parse physical geometry (needed for units="deg": degrees ↔ cm ↔ pixels)
+        try:
+            screen_width_cm = float(str(self.expInfo["screen_width_cm"]).replace(",", "."))
+            viewing_distance_cm = float(str(self.expInfo["viewing_distance_cm"]).replace(",", "."))
+        except Exception:
+            print("ERROR: Please enter valid screen width and viewing distance (e.g., 53.0, 60.0).")
+            core.quit()
 
-        else:
-            # Custom monitor profile: values typed by the participant in the GUI
-            try:
-                screen_width_cm = float(self.expInfo["screen_width_cm"].replace(",", "."))
-                viewing_distance_cm = float(self.expInfo["viewing_distance_cm"].replace(",", "."))
-                resolution_x_px = int(self.expInfo["resolution_x_px"])
-                resolution_y_px = int(self.expInfo["resolution_y_px"])
-            except Exception:
-                print("ERROR: Please enter valid monitor values (e.g., 53.0, 60.0, 1920, 1080).")
-                core.quit()
+        # Build Monitor object (geometry model used for deg↔pix conversion). 
+        # Avoid writing to the global PsychoPy Monitor Center (mon.save()).
+        # Writing monitor profiles can create cross-machine drift and persistent side effects.
+        mon = monitors.Monitor("CurrentDisplay")
+        mon.setWidth(screen_width_cm)            # cm
+        mon.setDistance(viewing_distance_cm)     # cm
 
-       
-
-            # Reuse a single saved profile name: "Custom"
-            mon = monitors.Monitor("Custom")
-            mon.setWidth(screen_width_cm)                         # cm
-            mon.setDistance(viewing_distance_cm)                  # cm
-            mon.setSizePix((resolution_x_px, resolution_y_px))    # px
-            mon.save()
-
-            print("Using monitor profile: Custom (participant-entered values).")
-
-        # Create the PsychoPy Window (units='deg' requires a valid Monitor geometry)
+        # Placeholder sizePix required before Window creation (units="deg"). Replaced with the true screen sizePix only in fullscreen.
+        mon.setSizePix((800, 600))               
+           
+        self.mon = mon
+           
+        # Create the PsychoPy Window; now the real pixel size becomes available via win.size
         self.win = visual.Window(
             monitor=mon,
-            size=mon.getSizePix(), # window resolution (should match the monitor profile)
-            units='deg',
-            color='black',
-            fullscr=True,
+            units="deg",
+            fullscr=self.fullscr,
+            color="black",
             waitBlanking=True,   # try to sync flips to the monitor refresh (vsync) for more stable frame timing
-            useFBO=True,         # off-screen rendering; improves frame timing stability on this MacBook
+            useFBO=True,         # off-screen rendering; improves frame timing stability on some computers
         )
 
-        # Debug print for reports like "instructions clipped / stimulus off-screen"
-        print(f"[WINDOW] win.size(px)={self.win.size}, mon.sizePix={mon.getSizePix()}")
-
+        # Debug: Retina Macs often report win.size in framebuffer pixels (2× scale)
+        print("win.useRetina =", getattr(self.win, "useRetina", None))
+        print("win.size =", self.win.size)
+      
+        # win_px = "window pixels as reported by PsychoPy" (often framebuffer px on Retina)
+        win_px = (int(self.win.size[0]), int(self.win.size[1]))
         
-        # Warm up display timing before any measurements.
-        # The first few screen updates can be unstable, so we flip the window
-        # several times to let timing settle before measuring refresh rate
-        print("\n Warming up display timing (120 flips)...")
-        for _ in range(120):
-            self.win.flip()
-        print(" Warm-up complete.")
+        # model_px = "pixel size intended to use for deg↔pix geometry" (i.e., what mon.sizePix should become in fullscreen).
+        # Default: assume win.size already matches the screen geometry
+        model_px = win_px
+
+        # macOS Retina: convert framebuffer px -> logical px for deg↔pix geometry
+        if sys.platform == "darwin" and getattr(self.win, "useRetina", False):
+            model_px = (win_px[0] // 2, win_px[1] // 2)
+
+        # Read current Monitor sizePix (often still the placeholder)
+        before_px = tuple(mon.getSizePix())
+
+        # Only update Monitor sizePix in fullscreen; in fullscreen, win.size corresponds to the physical display (after Retina adjustment),
+        # so it’s valid for deg geometry (windowed mode cannot provide valid screen resolution for deg calibration)
+        if self.fullscr:
+            if before_px != model_px:
+                mon.setSizePix(model_px)
+        else:
+            print("[INFO] Windowed mode: not overwriting mon.sizePix from win.size (would break deg calibration).")
+
+        # Log what happened (reproducibility/debugging)
+        after_px = tuple(mon.getSizePix())
+        print(f"[WINDOW] win.size(px)={win_px}, mon.sizePix(before)={before_px}, mon.sizePix(after)={after_px}, model_px={model_px}")
+
+        # Store for summary/logging
+        self.screen_width_cm = float(mon.getWidth())
+        self.viewing_distance_cm = float(mon.getDistance())
+        self.actual_win_size_px = win_px
+        self.monitor_model_size_px = model_px
    
     # Measure refresh rate and compute derived stimulus parameters (density correction, sanity checks)
     def measure_and_define_parameters(self):
@@ -202,31 +209,74 @@ class Experiment:
         # Print a quick sanity check
         print("\n=== Density Sanity Check ===")
         print(f"Baseline design: {self.dot_density:.2f} dots/deg²/s @ {self.DESIGN_RATE:.0f} Hz")
-        print(f"Measured refresh: {self.measured_rate:.2f} Hz")
+        print(f"Measured refresh rate: {self.measured_rate:.2f} Hz")
         print(f"Adjusted density: {self.density_adjusted:.2f} dots/deg²/s")
         print(f"Dots per frame (baseline): {self.dots_per_frame_baseline:.4f}")
         print(f"Dots per frame (adjusted): {self.dots_per_frame_adjusted:.4f}")
         print(" If these two per-frame values are ~equal, visual density per frame is stable.\n")
 
     
-    # Estimate the true refresh rate from flip timing (after warm-up)
+    # Estimate the true refresh rate 
     def measure_refresh_rate(self):
 
-        # Collect timestamps for a fixed number of screen refreshes.
-        # win.flip() returns the time (in seconds) when the new frame was actually shown.
+        """
+        1. Use PsychoPy getActualFrameRate() when available.
+        2. Otherwise assume 60 Hz.
+        3. Always record raw flip timing for later inspection 
+        """
+        # PsychoPy function that measures flip stability across frames and 
+        # returns a refresh rate in Hz if timing is sufficiently stable
+        refresh_rate_hz = self.win.getActualFrameRate(
+            nIdentical=8,
+            nMaxFrames=600,
+            nWarmUpFrames=100,
+            threshold=1.5,   # ms tolerance between consecutive frames
+            infoMsg=None
+        )
+        
+        if refresh_rate_hz is not None:
+            refresh_rate_hz = float(refresh_rate_hz)
+            self.refresh_rate_method = "getActualFrameRate"
+        
+        else:
+            # PsychoPy could not determine a stable refresh rate
+            refresh_rate_hz = 60.0
+            self.refresh_rate_method = "default_60hz"
+                      
+        # Store flip-to-flip durations using the built-in function (seconds)
+        self.win.recordFrameIntervals = True
+        self.win.frameIntervals = []  # clear any previous data
+
+        # Store flip timestamps returned by win.flip() (manual timing trace as an extra check)
         frame_times = []
-        for _ in range(240):  # ~2 s at 120 Hz (or ~4 s at 60 Hz)
+        for _ in range(240):
             frame_times.append(self.win.flip())
 
-        # Convert timestamps -> frame intervals (sec/frame) -> refresh rate (Hz).
-        if len(frame_times) > 1:
-            intervals = np.diff(frame_times)
-            measured_rate = 1.0 / np.mean(intervals)
-            print(f"True measured frame rate: {measured_rate:.2f} Hz")
-        else:
-            measured_rate = 60.0
-            print("Could not measure reliably — using default 60 Hz.")
-        return measured_rate
+        # Stop recording frame intervals (record only during refresh-rate check)
+        self.win.recordFrameIntervals = False
+
+        # Safety check (need at least 2 timestamps to form at least 1 interval)
+        if len(frame_times) <= 1:
+            print("[ERROR] Flip timing failed (not enough timestamps).")
+            print("Display timing is unreliable. Aborting experiment.")
+            self.win.close()
+            core.quit()
+
+        # Store timing data
+        self.refresh_frame_times = frame_times                      # timestamps from win.flip()
+        self.refresh_frame_intervals = list(self.win.frameIntervals)  # PsychoPy recorded intervals
+
+        # Save timing data in additional files
+        base = self.results_csv_path.replace(".csv", "")
+        self.frame_times_path = base + "_refresh_timestamps.txt"
+        self.frame_intervals_path = base + "_refresh_intervals.txt"
+
+        np.savetxt(self.frame_times_path, self.refresh_frame_times)
+        np.savetxt(self.frame_intervals_path, self.refresh_frame_intervals)
+
+        print(f"Refresh rate USED: {refresh_rate_hz:.2f} Hz ({self.refresh_rate_method})")
+        return float(refresh_rate_hz)
+
 
     # Initialize ioHub keyboard and the RDK stimulus (including subject-specific RNG seed)
     # RDK RNG: deterministic seed from subject_id → controls dot randomness (signal/noise) for this participant.
@@ -275,10 +325,21 @@ class Experiment:
             f.write(self._line("Participant:", self.subject_id))
             f.write(self._line("Timestamp:", datetime.now().isoformat(timespec="seconds")))
 
-             # Timing / display 
+            # Timing / display
             f.write(self._section("DISPLAY TIMING"))
-            f.write(self._line("Measured refresh rate (Hz):", f"{self.measured_rate:.2f}"))
-            f.write(self._line("Design refresh rate used for calculating dot count (Hz):", f"{self.DESIGN_RATE:.2f}"))
+
+            # Single refresh rate used by the experiment
+            f.write(self._line("Measured refresh rate used (Hz):", f"{self.measured_rate:.2f}"))
+
+            f.write(self._line("Refresh rate estimation method:", getattr(self, "refresh_rate_method", "None")))
+
+            # Design reference (for density correction transparency)
+            f.write(self._line("Design refresh rate (Hz):",f"{self.DESIGN_RATE:.2f}"))
+
+            # Flip-timing data collected during the refresh-rate check
+            f.write(self._section("DISPLAY TIMING CHECK"))
+            f.write(self._line("Refresh rate timestamps file:", os.path.basename(getattr(self, "frame_times_path", "None"))))
+            f.write(self._line("Refresh rate intervals file:",os.path.basename(getattr(self, "frame_intervals_path", "None"))))
             
             # Stimulus parameters 
             f.write(self._section("RDK STIMULUS"))
@@ -298,12 +359,15 @@ class Experiment:
             # Environment: versions/backends that can affect timing and input 
             f.write(self._section("ENVIRONMENT"))
             f.write(self._line("PsychoPy version:", psychopy.__version__))
-            f.write(self._line("Monitor:", self.monitor_choice))
             f.write(self._line("Window backend:", prefs.general["winType"]))
             f.write(self._line("Keyboard backend:", prefs.hardware["keyboard"]))
             f.write(self._line("Screen width (cm):", self.screen_width_cm))
             f.write(self._line("Viewing distance (cm):", self.viewing_distance_cm))
-            f.write(self._line("Resolution (px):", f"{self.resolution_x_px} x {self.resolution_y_px}"))
+            w, h = self.actual_win_size_px
+            mw, mh = self.monitor_model_size_px
+            f.write(self._line("Window framebuffer size(px):", f"{w} x {h}"))
+            f.write(self._line("Monitor sizePix used for deg<->pix (px):", f"{mw} x {mh}"))
+
 
         print(f"\n Summary saved to: {os.path.abspath(summary_path)}")
 

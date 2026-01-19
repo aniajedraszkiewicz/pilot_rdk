@@ -1,15 +1,19 @@
 """
-test_exp_core.py
+Minimal patch list to match the new experiment.py:
 
-Headless-safe unit tests for experiment_files/experiment.py.
+1) Ensure import succeeds even if experiment_files is not on sys.path:
+   - add project root to sys.path
+   - create a minimal "experiment_files" package in sys.modules
 
-Key idea:
-- experiment.py imports .block and .rdk_stim at import-time
-- block.py imports psychopy.data (and other PsychoPy stuff)
-So in tests we must:
-1) Provide a fake psychopy package that includes psychopy.data
-2) Provide fake experiment_files.block and experiment_files.rdk_stim modules
-   BEFORE importing experiment_files.experiment, so real block.py never loads.
+2) FakeWindow must implement getActualFrameRate + frame-interval recording fields used by measure_refresh_rate().
+
+3) Tests updated only where experiment.py changed:
+   - remove monitor_choice usage; set expInfo fields instead
+   - create_window_and_monitor no longer “warms up flips”
+   - measure_refresh_rate requires results_csv_path and writes timing files
+   - initialize_stimulus_and_load_trials uses hashlib seed; assert deterministic seed
+   - write_summary label changed: "Measured refresh rate used (Hz):"
+   - write_summary now expects timing-check section and geometry fields
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ import os
 import sys
 from dataclasses import dataclass
 from types import ModuleType, SimpleNamespace
+from pathlib import Path
+import hashlib
 
 import numpy as np
 import pytest
@@ -39,19 +45,44 @@ class FlipClock:
 
 
 class FakeWindow:
-    """Minimal psychopy.visual.Window stand-in."""
+    """Minimal psychopy.visual.Window stand-in (supports refresh-rate test)."""
+
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
         self.units = kwargs.get("units")
         self.color = kwargs.get("color")
+
+        # experiment.py reads these directly
+        self.size = kwargs.get("size", (1440, 900))
+        self.useRetina = kwargs.get("useRetina", False)
+
+        # experiment.py uses these in measure_refresh_rate()
+        self.recordFrameIntervals = False
+        self.frameIntervals = []
+
+        # deterministic flip timing
         self._flip_calls = 0
         self._flip_clock = kwargs.get("_flip_clock", None)
 
+        # deterministic getActualFrameRate()
+        self._actual_rate = kwargs.get("_actual_rate", 120.0)
+
+    def getActualFrameRate(self, **_kwargs):
+        return self._actual_rate
+
     def flip(self):
         self._flip_calls += 1
+
+        t = 0.0
         if self._flip_clock is not None:
-            return self._flip_clock.tick()
-        return 0.0
+            t = self._flip_clock.tick()
+
+        # emulate PsychoPy’s interval recording
+        if self.recordFrameIntervals:
+            if self._flip_calls >= 2 and self._flip_clock is not None:
+                self.frameIntervals.append(self._flip_clock.dt)
+
+        return t
 
     def close(self):
         return None
@@ -59,19 +90,38 @@ class FakeWindow:
 
 class FakeMonitor:
     """Minimal psychopy.monitors.Monitor stand-in."""
+
     def __init__(self, name):
         self.name = name
-        self._size_pix = (1440, 900)
+        self._size_pix = (800, 600)
+        self._width_cm = None
+        self._distance_cm = None
 
-    def setWidth(self, _cm): ...
-    def setDistance(self, _cm): ...
-    def setSizePix(self, size_pix): self._size_pix = tuple(size_pix)
-    def getSizePix(self): return self._size_pix
-    def save(self): return None
+    def setWidth(self, cm):
+        self._width_cm = float(cm)
+
+    def setDistance(self, cm):
+        self._distance_cm = float(cm)
+
+    def getWidth(self):
+        return float(self._width_cm) if self._width_cm is not None else 0.0
+
+    def getDistance(self):
+        return float(self._distance_cm) if self._distance_cm is not None else 0.0
+
+    def setSizePix(self, size_pix):
+        self._size_pix = tuple(size_pix)
+
+    def getSizePix(self):
+        return self._size_pix
+
+    def save(self):
+        return None
 
 
 class FakeKeyboard:
     """Minimal psychopy.hardware.keyboard.Keyboard stand-in."""
+
     def __init__(self, backend="iohub"):
         self.backend = backend
         self._cleared = False
@@ -86,7 +136,8 @@ class FakeDlg:
 
 
 class FakeRDK:
-    """Replace your real RDK during tests (no ElementArrayStim, no OpenGL)."""
+    """Replace real RDK during tests (no OpenGL)."""
+
     def __init__(self, win, frame_rate, dot_speed, dot_density, rng):
         self.win = win
         self.frame_rate = float(frame_rate)
@@ -102,11 +153,13 @@ class FakeRDK:
 
 
 class FakeBlock:
-    """Only needed if you ever test run_experiment() later."""
+    """Only needed if run_experiment() is tested later."""
+
     def __init__(self, *args, **kwargs):
         self.block_seed = 999
 
-    def show_intro(self): return None
+    def show_intro(self):
+        return None
 
     def run_block(self):
         return {
@@ -131,12 +184,23 @@ class FakeBlock:
 def exp_mod(monkeypatch):
     """
     Import experiment_files.experiment safely by stubbing:
-    - psychopy and its submodules (including psychopy.data)
-    - experiment_files.block and experiment_files.rdk_stim (so real files aren't imported)
-    - os.chdir at import-time (so tests don't change cwd)
+    - psychopy and its submodules
+    - experiment_files.block and experiment_files.rdk_stim
+    - os.chdir at import-time
     """
     # Prevent import-time os.chdir(...) from changing pytest cwd
     monkeypatch.setattr(os, "chdir", lambda *_a, **_k: None)
+
+    # Minimal: ensure project root is importable so "experiment_files" can be found
+    project_root = str(Path(__file__).resolve().parents[1])
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    # Minimal: ensure parent package exists for submodule stubs
+    if "experiment_files" not in sys.modules:
+        pkg = ModuleType("experiment_files")
+        pkg.__path__ = [os.path.join(project_root, "experiment_files")]
+        monkeypatch.setitem(sys.modules, "experiment_files", pkg)
 
     # -------- Fake psychopy tree --------
     psychopy = ModuleType("psychopy")
@@ -151,24 +215,19 @@ def exp_mod(monkeypatch):
     gui = SimpleNamespace(DlgFromDict=lambda *a, **k: FakeDlg(ok=True))
     psychopy.gui = gui
 
-    monitors = SimpleNamespace(
-        getAllMonitors=lambda: ["MacBookDisplay"],
-        Monitor=lambda name: FakeMonitor(name),
-    )
+    monitors = SimpleNamespace(Monitor=lambda name: FakeMonitor(name))
     psychopy.monitors = monitors
 
     visual = SimpleNamespace(Window=FakeWindow)
     psychopy.visual = visual
 
-    # IMPORTANT: provide psychopy.data because block.py imports it
-    data = SimpleNamespace()  # we don't need any functions for these tests
+    data = SimpleNamespace()
     psychopy.data = data
 
     keyboard_mod = SimpleNamespace(Keyboard=FakeKeyboard)
     hardware = SimpleNamespace(keyboard=keyboard_mod)
     psychopy.hardware = hardware
 
-    # Inject psychopy into sys.modules so "from psychopy import ..." works
     monkeypatch.setitem(sys.modules, "psychopy", psychopy)
     monkeypatch.setitem(sys.modules, "psychopy.prefs", prefs)
     monkeypatch.setitem(sys.modules, "psychopy.core", core)
@@ -179,8 +238,7 @@ def exp_mod(monkeypatch):
     monkeypatch.setitem(sys.modules, "psychopy.hardware", hardware)
     monkeypatch.setitem(sys.modules, "psychopy.hardware.keyboard", keyboard_mod)
 
-    # -------- Stub your internal modules imported at top-level --------
-    # experiment.py does: from .block import Block ; from .rdk_stim import RDK
+    # -------- Stub internal modules imported at top-level --------
     fake_block_mod = ModuleType("experiment_files.block")
     fake_block_mod.Block = FakeBlock
     monkeypatch.setitem(sys.modules, "experiment_files.block", fake_block_mod)
@@ -189,7 +247,7 @@ def exp_mod(monkeypatch):
     fake_rdk_mod.RDK = FakeRDK
     monkeypatch.setitem(sys.modules, "experiment_files.rdk_stim", fake_rdk_mod)
 
-    # Now we can import experiment_files.experiment safely
+    # Import safely
     mod_name = "experiment_files.experiment"
     if mod_name in sys.modules:
         mod = importlib.reload(sys.modules[mod_name])
@@ -212,9 +270,14 @@ def test_import_sets_expected_prefs_and_env(exp_mod):
     assert exp_mod.prefs.hardware.get("keyboard") == "iohub"
 
 
-def test_create_window_and_monitor_warms_up_flips(exp_mod):
+def test_create_window_and_monitor_sets_window_fields(exp_mod):
     exp = exp_mod.Experiment()
-    exp.monitor_choice = "MacBookDisplay"
+    exp.expInfo["screen_width_cm"] = "53.0"
+    exp.expInfo["viewing_distance_cm"] = "57.0"
+    exp.expInfo["fullscr"] = False
+
+    # create_window_and_monitor() reads self.fullscr, which is normally set in collect_participant_info()
+    exp.fullscr = False
 
     exp.create_window_and_monitor()
 
@@ -223,52 +286,54 @@ def test_create_window_and_monitor_warms_up_flips(exp_mod):
     assert exp.win.kwargs["fullscr"] is False
     assert exp.win.kwargs["waitBlanking"] is True
     assert exp.win.kwargs["useFBO"] is True
-    assert exp.win._flip_calls >= 120
 
 
-def test_measure_refresh_rate_deterministic(exp_mod):
+def test_measure_refresh_rate_deterministic_and_writes_files(tmp_path, exp_mod):
     exp = exp_mod.Experiment()
+    exp.results_csv_path = str(tmp_path / "S01_20250101_000000.csv")
 
     clk = FlipClock(dt=1.0 / 120.0)
-    exp.win = FakeWindow(_flip_clock=clk)
+    exp.win = FakeWindow(_flip_clock=clk, _actual_rate=120.0)
 
     measured = exp.measure_refresh_rate()
+
     assert np.isfinite(measured)
     assert abs(measured - 120.0) < 1.0
+    assert os.path.exists(exp.frame_times_path)
+    assert os.path.exists(exp.frame_intervals_path)
 
 
 def test_density_correction_keeps_dots_per_frame_stable(exp_mod, monkeypatch):
     exp = exp_mod.Experiment()
-
     monkeypatch.setattr(exp, "measure_refresh_rate", lambda: 120.0, raising=True)
+
     exp.measure_and_define_parameters()
 
     assert abs(exp.dots_per_frame_adjusted - exp.dots_per_frame_baseline) < 1e-12
 
 
-def test_initialize_stimulus_creates_seed_and_rdk(tmp_path, exp_mod, monkeypatch):
+def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mod, monkeypatch):
     exp = exp_mod.Experiment()
 
     exp.subject_id = "S01"
-    exp.monitor_choice = "MacBookDisplay"
     exp.measured_rate = 120.0
     exp.dot_speed = 5.0
     exp.density_adjusted = 33.4
     exp.results_csv_path = str(tmp_path / "S01_20250101_000000.csv")
     exp.win = FakeWindow()
 
-    # Don’t test file I/O here; just confirm it is called
     called = {"n": 0}
     monkeypatch.setattr(exp, "write_summary", lambda: called.__setitem__("n", called["n"] + 1), raising=True)
 
     exp.initialize_stimulus_and_load_trials()
 
+    base = f"RDK|{exp.subject_id}".encode("utf-8")
+    digest = hashlib.sha256(base).hexdigest()
+    expected_seed = int(digest[:8], 16)
+
     assert exp.kb.backend == "iohub"
     assert exp.kb._cleared is True
-
-    assert isinstance(exp.rdk_seed, int)
-    assert 0 <= exp.rdk_seed <= 0xFFFFFFFF
-
+    assert exp.rdk_seed == expected_seed
     assert exp.rdk.frame_rate == 120.0
     assert called["n"] == 1
 
@@ -277,10 +342,20 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     exp = exp_mod.Experiment()
 
     exp.subject_id = "S01"
-    exp.monitor_choice = "MacBookDisplay"
     exp.results_csv_path = str(tmp_path / "S01_20250101_000000.csv")
 
+    # new summary includes these fields
+    exp.screen_width_cm = 53.0
+    exp.viewing_distance_cm = 57.0
+    exp.actual_win_size_px = (1440, 900)
+    exp.monitor_model_size_px = (1440, 900)
+
+    # timing-check section expects these paths (basenames are written)
+    exp.frame_times_path = str(tmp_path / "S01_20250101_000000_refresh_timestamps.txt")
+    exp.frame_intervals_path = str(tmp_path / "S01_20250101_000000_refresh_intervals.txt")
+
     exp.measured_rate = 120.0
+    exp.refresh_rate_method = "getActualFrameRate"
     exp.DESIGN_RATE = 60.0
     exp.dot_speed = 5.0
     exp.dot_density = 16.7
@@ -298,9 +373,10 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     txt = open(summary_path, "r", encoding="utf-8").read()
     assert "RUN SUMMARY" in txt
     assert "DISPLAY TIMING" in txt
+    assert "DISPLAY TIMING CHECK" in txt
     assert "RDK STIMULUS" in txt
     assert "ENVIRONMENT" in txt
-    assert "Measured refresh rate (Hz):" in txt
+    assert "Measured refresh rate used (Hz):" in txt
     assert "PsychoPy version:" in txt
 
 

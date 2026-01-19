@@ -22,14 +22,18 @@ def load_trials(csv_path):
     
 
 def get_block_intro_text(block_no):
-    """Return title and body text for a given block number (no PsychoPy)."""
+    """Return title and body text for a given block number."""
     title_by_block = {
-        1: "Practice (Block 1)",
+        1: "Task instructions",
         2: "Experimental_1 (Block 2)",
         3: "Experimental_2 (Block 3)",
     }
     body_by_block = {
-        1: "You’ll do a few easy trials to get familiar with the task.",
+        1: "In a moment, you will see dots moving on the screen.\n\n"
+    "The dots will move continuously and their movement may change over time.\n\n"
+    "Your task is to decide, as quickly and accurately as possible, whether most of the dots are moving to the left or to the right.\n\n"
+    "Press the LEFT arrow key if most dots move left.\n"
+    "Press the RIGHT arrow key if most dots move right.",
         2: "Main task. Trials are randomized.",
         3: "Main task. Trials are randomized.",
     }

@@ -49,7 +49,7 @@ class Block:
         # Store per-trial time limit (seconds)
         self.max_stim_sec = max_stim_sec
        
-        # ------------------------ Seed block-level RNG ------------------------
+    # ------------------------ Seed block-level RNG ------------------------
 
         # Seed a local RNG for block-level design choices (e.g., direction), separate from the dot RNG.
         seed_str = f"{subject_id}_BLOCK_{block_no}".encode("utf-8") # build seed text
