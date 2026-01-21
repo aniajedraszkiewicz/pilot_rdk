@@ -72,7 +72,7 @@ class Experiment:
     - collecting basic info about the participant (e.g., ID) 
     - creating the PsychoPy Monitor/Window (units='deg' depend on correct monitor geometry)
     - measuring the refresh rate
-    - defining stimulus parameters (e.g., dot speed, dot density) and applying refresh-rate corrections when needed
+    - defining stimulus parameters (e.g., dot speed, dot density)
     - enabling/disabling debug output for timing and frame-by-frame diagnostics
     - running the experiment block(s)
     - saving trial-level data and run metadata (e.g., summary file, diagnostic plots) 
@@ -188,33 +188,15 @@ class Experiment:
         self.actual_win_size_px = win_px
         self.monitor_model_size_px = model_px
    
-    # Measure refresh rate and compute derived stimulus parameters (density correction, sanity checks)
+    # Measure refresh rate and define parameters
     def measure_and_define_parameters(self):
         self.measured_rate = self.measure_refresh_rate()
+        self.dot_speed = 5.0               # deg/s 
+        self.dot_density = 0.55            # dots/deg² 
 
-        # Define design constants
-        self.DESIGN_RATE = 60.0            # reference rate used when choosing dot_density
-        self.dot_speed = 5.0               # deg/s (kept constant across refresh rates)
-        self.dot_density = 16.7            # dots/deg²/s at DESIGN_RATE
-
-        # Scale density so dots-per-frame stays similar at the measured refresh rate.
-        # This matters on MacBook displays that often run ~120 Hz: without scaling,
-        # the same dots/deg²/s would look ~2× sparser per frame than at 60 Hz.
-        self.density_adjusted = self.dot_density * (self.measured_rate / self.DESIGN_RATE)
-
-        # Sanity check: these two should be ~equal if the correction worked
-        self.dots_per_frame_baseline = self.dot_density / self.DESIGN_RATE
-        self.dots_per_frame_adjusted = self.density_adjusted / self.measured_rate
 
         # Print a quick sanity check
-        print("\n=== Density Sanity Check ===")
-        print(f"Baseline design: {self.dot_density:.2f} dots/deg²/s @ {self.DESIGN_RATE:.0f} Hz")
         print(f"Measured refresh rate: {self.measured_rate:.2f} Hz")
-        print(f"Adjusted density: {self.density_adjusted:.2f} dots/deg²/s")
-        print(f"Dots per frame (baseline): {self.dots_per_frame_baseline:.4f}")
-        print(f"Dots per frame (adjusted): {self.dots_per_frame_adjusted:.4f}")
-        print(" If these two per-frame values are ~equal, visual density per frame is stable.\n")
-
     
     # Estimate the true refresh rate 
     def measure_refresh_rate(self):
@@ -300,9 +282,14 @@ class Experiment:
             self.win,
             frame_rate=self.measured_rate,      # measured refresh rate (Hz)
             dot_speed=self.dot_speed,            
-            dot_density=self.density_adjusted,   
+            dot_density=self.dot_density,   
             rng=rdk_rng    
         )
+        print("n_dots:", self.rdk.n_dots)
+        print("field_area:", np.pi * (self.rdk.field_radius ** 2))
+        print("measured_rate:", self.measured_rate)
+        print("dot_density:", self.dot_density)
+
 
         # Write a metadata summary file 
         self.write_summary()
@@ -333,9 +320,6 @@ class Experiment:
 
             f.write(self._line("Refresh rate estimation method:", getattr(self, "refresh_rate_method", "None")))
 
-            # Design reference (for density correction transparency)
-            f.write(self._line("Design refresh rate (Hz):",f"{self.DESIGN_RATE:.2f}"))
-
             # Flip-timing data collected during the refresh-rate check
             f.write(self._section("DISPLAY TIMING CHECK"))
             f.write(self._line("Refresh rate timestamps file:", os.path.basename(getattr(self, "frame_times_path", "None"))))
@@ -344,17 +328,13 @@ class Experiment:
             # Stimulus parameters 
             f.write(self._section("RDK STIMULUS"))
             f.write(self._line("Dot speed (deg/s):", self.dot_speed))
-            f.write(self._line("Baseline dot density (dots/deg²/s):", self.dot_density))
-            f.write(self._line("Adjusted dot density (dots/deg²/s):", f"{self.density_adjusted:.2f}"))
-            f.write(self._line("Dots per frame (baseline):", f"{self.dots_per_frame_baseline:.4f}"))
-            f.write(self._line("Dots per frame (adjusted):", f"{self.dots_per_frame_adjusted:.4f}"))
+            f.write(self._line("Dot density (dots/deg²/s):", self.dot_density))
             f.write(self._line("Total dots:", self.rdk.n_dots))
             f.write(self._line("Field diameter (deg):", self.rdk.field_diameter))
 
             # Per-sequence dot count 
             dots_per_seq = self.rdk.n_dots // self.rdk.n_sequences
             f.write(self._line("Dots per sequence:", dots_per_seq))
-            f.write(self._line("Dots per sequence:", self.rdk.dots_stim.nElements))
 
             # Environment: versions/backends that can affect timing and input 
             f.write(self._section("ENVIRONMENT"))

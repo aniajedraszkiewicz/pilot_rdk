@@ -63,7 +63,7 @@ class RDK:
     def __init__(
             self, 
             win,                        # window where dots will be drawn in the single_trial class
-            dot_density = 16.7,         # [dots/deg²/s]
+            dot_density = 16.7,         # [dots/deg²]
             dot_speed = 5.0,            # [deg/s]
             frame_rate = 60,            # [Hz] = [frame/s]
             field_diameter = 18.0,      # [deg] diameter of the circular aperture where dots are sampled and respawned;
@@ -96,12 +96,12 @@ class RDK:
         field_area = np.pi * self.field_radius**2
 
         # Calculate the total number of dots in the pool 
-        self.n_dots = int(np.ceil(self.dot_density * field_area / self.frame_rate)) 
+        self.n_dots = int(np.ceil(self.dot_density * field_area)) 
             # n_dots - total number of dots (dot pool) – the full collection of all dots the algorithm manages internally.
             # It's calculated as per frame, but not all dots are active each frame because of the Movshon–Newsome algorithm, where 
             # only one subset (1/n_sequences) is UPDATED at a time (all dots are shown, but only 1 subset changes position on a given frame).
-            # Units check: (dot_density * field_area)/frame_rate
-            #              ([dots/deg²/s] * [deg²])/[Hz=frame/s] = [dots/frame]
+            # Units check: (dot_density * field_area)
+            #              ([dots/deg²] * [deg²]) = [dots]
     
         
         # Add extra dots if necessary to make the total number divisible by n_sequences 

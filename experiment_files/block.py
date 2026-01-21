@@ -155,7 +155,7 @@ class Block:
         quest = data.QuestHandler(
             startVal=0.58,          # prior mean: initial threshold guess (coherence)
             startValSd=0.40,        # prior SD: uncertainty about the initial guess
-            pThreshold=0.82,        # target performance level #(82% correct - which is equivalent 
+            pThreshold=0.82,        # target performance level (82% correct - which is equivalent 
                                     # to a 3 up 1 down standard staircase; PsychoPy QuestHandler documentation)
             gamma=0.5,              # 2AFC guessing rate (left/right → chance = 50%)
             beta=3.5,               # Weibull slope (steepness of the psychometric curve)
