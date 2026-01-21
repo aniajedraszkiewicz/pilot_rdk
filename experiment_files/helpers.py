@@ -42,3 +42,37 @@ def get_block_intro_text(block_no):
     body  = body_by_block.get(block_no, "Press SPACE to begin.")
 
     return title, body
+
+def get_block_outro_text(block_no):
+    """Return title and body text shown after a block is finished."""
+    
+    title_by_block = {
+        1: "Task completed",
+        2: "End of block",
+        3: "End of block",
+    }
+
+    body_by_block = {
+        1: (
+            "Thank you for your participation.\n\n"
+            "Please inform the person conducting the study."
+        ),
+        2: (
+            "You have completed this block.\n\n"
+            "You can take a short break if needed.\n\n"
+            "Press SPACE when you are ready to continue."
+        ),
+        3: (
+            "You have completed this block.\n\n"
+            "You can take a short break if needed.\n\n"
+            "Press SPACE when you are ready to continue."
+        ),
+    }
+
+    title = title_by_block.get(block_no, "End of block")
+    body  = body_by_block.get(
+        block_no,
+        "Press SPACE to continue."
+    )
+
+    return title, body

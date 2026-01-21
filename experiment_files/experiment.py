@@ -406,10 +406,18 @@ class Experiment:
         # Run adaptive QUEST block (trial loop + CSV logging happen inside Block.run_block())
         diagnostics = block.run_block()
 
+        # If the block was aborted (ESC), stop cleanly
+        if diagnostics is None:
+            return
+
+        # Show outro to participant (break / end message)
+        block.show_outro()
+        
         # Quick console feedback
         overall_accuracy = diagnostics["overall_accuracy"]
         print("Overall accuracy across QUEST trials:", round(overall_accuracy, 3))
        
+        
         # Append QUEST diagnostics to the same summary file
         with open(summary_path, "a", encoding="utf-8") as f:
             

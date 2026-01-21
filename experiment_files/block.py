@@ -5,7 +5,7 @@ from datetime import datetime
 from psychopy import visual, core, data 
 from .single_trial import Trial
 import hashlib
-from .helpers import get_block_intro_text
+from .helpers import get_block_intro_text, get_block_outro_text
 
 
 
@@ -92,6 +92,31 @@ class Block:
                 # Start the block when SPACE or RETURN is pressed
                 if self.kb.getKeys(keyList=['space', 'return'], clear=True):
                     break
+
+    # ------------------------ Show outro screen ------------------------
+
+    def show_outro(self):
+        """Display the block outro screen"""
+        
+        title, body = get_block_outro_text(self.block_no)
+
+        msg = visual.TextStim(
+            self.win,
+            text=f"{title}\n\n{body}\n\nPress SPACE to continue",
+            height=0.9,
+            color="white",
+            wrapWidth=20,
+        )
+
+        self.kb.clearEvents()
+
+        while True:
+
+            msg.draw()
+            self.win.flip()
+
+            if self.kb.getKeys(keyList=["space", "return"], clear=True):
+                break
 
     # ------------------------ Show fixation and store timing ------------------------
 
