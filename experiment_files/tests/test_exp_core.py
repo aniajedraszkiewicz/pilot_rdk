@@ -1,19 +1,15 @@
 """
-Minimal patch list to match the new experiment.py:
+Unit tests for the RDK experiment core.
 
-1) Ensure import succeeds even if experiment_files is not on sys.path:
-   - add project root to sys.path
-   - create a minimal "experiment_files" package in sys.modules
+These tests verify that the experiment module:
+- imports safely without opening a real PsychoPy window,
+- correctly configures display and timing parameters,
+- produces deterministic random seeds,
+- writes timing and summary files,
+- and saves diagnostic outputs.
 
-2) FakeWindow must implement getActualFrameRate + frame-interval recording fields used by measure_refresh_rate().
-
-3) Tests updated only where experiment.py changed:
-   - remove monitor_choice usage; set expInfo fields instead
-   - create_window_and_monitor no longer “warms up flips”
-   - measure_refresh_rate requires results_csv_path and writes timing files
-   - initialize_stimulus_and_load_trials uses hashlib seed; assert deterministic seed
-   - write_summary label changed: "Measured refresh rate used (Hz):"
-   - write_summary now expects timing-check section and geometry fields
+PsychoPy and OpenGL-dependent components are replaced with lightweight fakes
+so the tests can run headlessly and deterministically.
 """
 
 from __future__ import annotations
@@ -129,6 +125,10 @@ class FakeKeyboard:
     def clearEvents(self):
         self._cleared = True
 
+    # Not needed by current experiment.py tests, but harmless if present later:
+    def getKeys(self, *args, **kwargs):
+        return []
+
 
 class FakeDlg:
     def __init__(self, ok=True):
@@ -149,6 +149,7 @@ class FakeRDK:
         self.n_dots = 100
         self.field_diameter = 10.0
         self.n_sequences = 3
+        self.field_radius = self.field_diameter / 2.0
         self.dots_stim = SimpleNamespace(nElements=self.n_dots)
 
 
@@ -159,6 +160,9 @@ class FakeBlock:
         self.block_seed = 999
 
     def show_intro(self):
+        return None
+
+    def show_outro(self):
         return None
 
     def run_block(self):
@@ -191,12 +195,12 @@ def exp_mod(monkeypatch):
     # Prevent import-time os.chdir(...) from changing pytest cwd
     monkeypatch.setattr(os, "chdir", lambda *_a, **_k: None)
 
-    # Minimal: ensure project root is importable so "experiment_files" can be found
+    # Ensure project root is importable so "experiment_files" can be found
     project_root = str(Path(__file__).resolve().parents[1])
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
-    # Minimal: ensure parent package exists for submodule stubs
+    # Ensure parent package exists for submodule stubs
     if "experiment_files" not in sys.modules:
         pkg = ModuleType("experiment_files")
         pkg.__path__ = [os.path.join(project_root, "experiment_files")]
@@ -218,7 +222,7 @@ def exp_mod(monkeypatch):
     monitors = SimpleNamespace(Monitor=lambda name: FakeMonitor(name))
     psychopy.monitors = monitors
 
-    visual = SimpleNamespace(Window=FakeWindow)
+    visual = SimpleNamespace(Window=FakeWindow, TextStim=lambda *a, **k: SimpleNamespace(draw=lambda: None))
     psychopy.visual = visual
 
     data = SimpleNamespace()
@@ -276,7 +280,7 @@ def test_create_window_and_monitor_sets_window_fields(exp_mod):
     exp.expInfo["viewing_distance_cm"] = "57.0"
     exp.expInfo["fullscr"] = False
 
-    # create_window_and_monitor() reads self.fullscr, which is normally set in collect_participant_info()
+    # create_window_and_monitor() reads self.fullscr, normally set in collect_participant_info()
     exp.fullscr = False
 
     exp.create_window_and_monitor()
@@ -303,13 +307,15 @@ def test_measure_refresh_rate_deterministic_and_writes_files(tmp_path, exp_mod):
     assert os.path.exists(exp.frame_intervals_path)
 
 
-def test_density_correction_keeps_dots_per_frame_stable(exp_mod, monkeypatch):
+def test_measure_and_define_parameters_sets_speed_and_density(exp_mod, monkeypatch):
     exp = exp_mod.Experiment()
     monkeypatch.setattr(exp, "measure_refresh_rate", lambda: 120.0, raising=True)
 
     exp.measure_and_define_parameters()
 
-    assert abs(exp.dots_per_frame_adjusted - exp.dots_per_frame_baseline) < 1e-12
+    assert abs(exp.measured_rate - 120.0) < 1e-12
+    assert abs(exp.dot_speed - 5.0) < 1e-12
+    assert abs(exp.dot_density - 0.55) < 1e-12
 
 
 def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mod, monkeypatch):
@@ -318,7 +324,7 @@ def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mo
     exp.subject_id = "S01"
     exp.measured_rate = 120.0
     exp.dot_speed = 5.0
-    exp.density_adjusted = 33.4
+    exp.dot_density = 0.55
     exp.results_csv_path = str(tmp_path / "S01_20250101_000000.csv")
     exp.win = FakeWindow()
 
@@ -344,7 +350,7 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     exp.subject_id = "S01"
     exp.results_csv_path = str(tmp_path / "S01_20250101_000000.csv")
 
-    # new summary includes these fields
+    # geometry fields
     exp.screen_width_cm = 53.0
     exp.viewing_distance_cm = 57.0
     exp.actual_win_size_px = (1440, 900)
@@ -354,16 +360,13 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     exp.frame_times_path = str(tmp_path / "S01_20250101_000000_refresh_timestamps.txt")
     exp.frame_intervals_path = str(tmp_path / "S01_20250101_000000_refresh_intervals.txt")
 
+    # stimulus/timing fields written by write_summary()
     exp.measured_rate = 120.0
     exp.refresh_rate_method = "getActualFrameRate"
-    exp.DESIGN_RATE = 60.0
     exp.dot_speed = 5.0
-    exp.dot_density = 16.7
-    exp.density_adjusted = exp.dot_density * (exp.measured_rate / exp.DESIGN_RATE)
-    exp.dots_per_frame_baseline = exp.dot_density / exp.DESIGN_RATE
-    exp.dots_per_frame_adjusted = exp.density_adjusted / exp.measured_rate
+    exp.dot_density = 0.55
 
-    exp.rdk = FakeRDK(FakeWindow(), exp.measured_rate, exp.dot_speed, exp.density_adjusted, np.random.default_rng(0))
+    exp.rdk = FakeRDK(FakeWindow(), exp.measured_rate, exp.dot_speed, exp.dot_density, np.random.default_rng(0))
 
     exp.write_summary()
 
@@ -378,6 +381,8 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     assert "ENVIRONMENT" in txt
     assert "Measured refresh rate used (Hz):" in txt
     assert "PsychoPy version:" in txt
+    assert "Screen width (cm):" in txt
+    assert "Viewing distance (cm):" in txt
 
 
 def test_plot_diagnostics_saves_png(tmp_path, exp_mod):
