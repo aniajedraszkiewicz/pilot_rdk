@@ -63,7 +63,7 @@ class RDK:
     def __init__(
             self, 
             win,                        # window where dots will be drawn in the single_trial class
-            dot_density = 16.7,         # [dots/deg²]
+            dot_density = 0.55,         # [dots/deg²]
             dot_speed = 5.0,            # [deg/s]
             frame_rate = 60,            # [Hz] = [frame/s]
             field_diameter = 18.0,      # [deg] diameter of the circular aperture where dots are sampled and respawned;
