@@ -37,34 +37,87 @@ from .block import Block
 from .rdk_stim import RDK
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+
 def plot_diagnostics(diagnostics, base_path):
-
     """
-    Save a diagnostic plot showing the evolution of QUEST’s threshold estimate across trials.
-    Use this to check whether the trajectory stabilizes and whether there are large jumps
-    that might suggest unstable responding (or too few trials).
+    Plot QUEST diagnostics across trials.
+
+    Top panel (stimulus space):
+        - Posterior threshold estimates in coherence (linear units)
+        - Coherence values actually presented on each trial
+
+    Bottom panel (internal QUEST space):
+        - Posterior threshold estimates in log10 units
+        - Intensities (log10 coherence) actually presented on each trial
+
+    Both panels share the same x-axis (trial number)
     """
+    # Extract data
+    thresh_coh = diagnostics["threshold_estimates"]
+    thresh_log10 = diagnostics["threshold_estimates_log10"]
 
-    # Running threshold estimate after each QUEST update (one value per trial)
-    thresh = diagnostics["threshold_estimates"]      
-    fig = plt.figure(figsize=(7,4))
-    trial_nums = np.arange(1, len(thresh) + 1)
-    
-    # Plot trajectory (dots + line) to see convergence across trials
-    plt.plot(trial_nums, thresh, "o-", alpha=0.85)
-    plt.xlabel("Trial")
-    plt.ylabel("Threshold estimate (coherence)")
-    plt.title("QUEST Threshold Trajectory")
-    plt.grid(True)
-    
-    # Choose x-axis tick spacing so labels don't become cluttered in longer runs
-    max_trials = len(thresh)
-    step = 2 if max_trials <= 80 else 4   # auto choose spacing
-    plt.xticks(np.arange(1, max_trials + 1, step))
+    stim_coh = diagnostics.get("stimuli_used", None)
+    stim_log10 = diagnostics.get("stimuli_used_log10", None)
 
-    # Save and close to avoid accumulating figures across runs
-    fig.savefig(base_path + "_thresholds.png")
+    # Number of trials completed in this QUEST block
+    n = len(thresh_coh)
+    trial_nums = np.arange(1, n + 1)
+
+    # Create figure
+    fig, (ax_top, ax_bottom) = plt.subplots(
+        2, 1, figsize=(8, 6), sharex=True
+    )
+
+    # Top panel
+    ax_top.plot(
+        trial_nums, thresh_coh,
+        "o-", label="Threshold estimate (coherence)",
+        linewidth=2
+    )
+
+    if stim_coh is not None and len(stim_coh) == n:
+        ax_top.plot(
+            trial_nums, stim_coh,
+            "x", label="Stimulus shown (coherence)",
+            alpha=0.8
+        ) 
+
+    ax_top.set_ylabel("Coherence (linear)")
+    ax_top.set_title("QUEST diagnostics — coherence space")
+    ax_top.grid(True)
+    ax_top.legend(fontsize=8)
+
+    # Bottom panel: log10
+    ax_bottom.plot(
+        trial_nums, thresh_log10,
+        "o--", label="Threshold estimate (log10)",
+        linewidth=2
+    )
+
+    if stim_log10 is not None and len(stim_log10) == n:
+        ax_bottom.plot(
+            trial_nums, stim_log10,
+            "x", label="Stimulus shown (log10)",
+            alpha=0.8
+        )
+
+    ax_bottom.set_ylabel("Intensity (log10 units)")
+    ax_bottom.set_xlabel("Trial")
+    ax_bottom.set_title("QUEST diagnostics — internal log10 space")
+    ax_bottom.grid(True)
+    ax_bottom.legend(fontsize=8)
+
+    # Final formatting
+    step = 2 if n <= 80 else 4  # Reduce x-tick density for larger numbers of trials to keep the x-axis readable
+    ax_bottom.set_xticks(np.arange(1, n + 1, step))
+
+    fig.tight_layout()
+    fig.savefig(base_path + "_quest_diagnostics.png")
     plt.close(fig)
+
 
 class Experiment:
     """
@@ -84,8 +137,7 @@ class Experiment:
         "participant": "",
         "screen_width_cm": "53.0",
         "viewing_distance_cm": "57.0",
-        "fullscr": [True, False],
-}
+        "fullscr": [True, False],}
 
     
     # Run all preparation steps in a fixed order (GUI → Window → calibration → stimulus)
@@ -361,7 +413,9 @@ class Experiment:
         results_header = [
             "timestamp","subject_id",
             "block_no","trial_no","condition",
-            "direction","coherence",
+            "direction","coherence", "intensity_log10",
+            "threshold_estimate_log10",
+            "threshold_estimate_coh",
             "response_key","correct_key","is_correct",
             "reaction_time","timeout",
             "global_onset_time","response_flip_time","response_frame_idx",
@@ -424,15 +478,55 @@ class Experiment:
             # Keep the same section style as write_summary()
             f.write("\nQUEST DIAGNOSTICS\n")
             f.write("=" * 60 + "\n")
-            f.write(f"{'QUEST first intensity:':<34} {diagnostics['quest_first_intensity']:.4f}\n")
-            f.write(f"{'QUEST intensity range:':<34} {diagnostics['quest_intensity_min']:.3f}–{diagnostics['quest_intensity_max']:.3f}\n")
-            f.write(f"{'Final mean threshold:':<34} {diagnostics['mean']:.4f}\n")
-            f.write(f"{'SD:':<34} {diagnostics['sd']:.4f}\n")
-            f.write(f"{'Mode:':<34} {diagnostics['mode']:.4f}\n")
-            f.write(f"{'Overall accuracy:':<34} {overall_accuracy:.3f}\n")
-            ci_low, ci_high = diagnostics["ci_5_95"]
-            f.write(f"{'CI 5–95%:':<34} ({ci_low:.2f}, {ci_high:.2f})\n")
-            f.write(f"{'Last-10-trial accuracy:':<34} {diagnostics['last10_accuracy']:.3f}\n")
+
+            # Helper: format numeric values for text output - returns a string with fixed decimal precision 
+            # or "NA" if the value is missing. Used to keep the summary readable and prevent crashes on None values.
+            def _fmt(x, nd=4):
+                return "NA" if x is None else f"{float(x):.{nd}f}"
+
+            # Print key QUEST settings 
+            f.write("QUEST SETTINGS\n")
+            f.write("-" * 60 + "\n")
+            f.write(f"{'Prior threshold guess (coh):':<34} {_fmt(diagnostics.get('quest_start_coh'), 2)}\n")
+            f.write(f"{'Minimum coherence:':<34} {_fmt(diagnostics.get('quest_min_coh'), 2)}\n")
+            f.write(f"{'Maximum coherence:':<34} {_fmt(diagnostics.get('quest_max_coh'), 2)}\n")
+            f.write(f"{'Prior threshold guess (log10):':<34} {_fmt(diagnostics.get('quest_start_intensity_log10'), 2)}\n")
+            f.write(f"{'Prior SD (log10):':<34} {_fmt(diagnostics.get('quest_start_intensity_sd_log10'), 2)}\n")
+            f.write(f"{'Target accuracy:':<34} {_fmt(diagnostics.get('quest_pThreshold'), 2)}\n")
+            f.write(f"{'Guess rate (gamma):':<34} {_fmt(diagnostics.get('quest_gamma'), 2)}\n")
+            f.write(f"{'Slope (beta):':<34} {_fmt(diagnostics.get('quest_beta'), 2)}\n")
+            f.write(f"{'Lapse rate (delta):':<34} {_fmt(diagnostics.get('quest_delta'), 2)}\n")
+            f.write(f"{'Number of trials:':<34} {diagnostics.get('quest_nTrials', 'NA')}\n")
+            f.write(f"{'Threshold estimation rule:':<34} {diagnostics.get('quest_method', 'NA')}\n")
+
+            f.write("\nQUEST RESULTS\n")
+            f.write("-" * 60 + "\n")
+            f.write(f"{'Coherence range:':<34} "f"{_fmt(diagnostics.get('coh_min_used'), 2)}–{_fmt(diagnostics.get('coh_max_used'), 2)}\n")
+            f.write(f"{'Final threshold estimate (coh):':<34} {_fmt(diagnostics.get('mean_coh'), 2)}\n")
+            f.write(f"{'Overall accuracy:':<34} {_fmt(diagnostics.get('overall_accuracy'), 2)}\n")
+            # confidence intervals for coherence
+            ci = diagnostics.get("ci_5_95_coh", None)
+            if ci is None or len(ci) != 2:
+                f.write(f"{'CI 5–95% (coh):':<34} (NA, NA)\n")
+            else:
+                ci_low, ci_high = ci
+                f.write(f"{'CI 5–95% (coh):':<34} ({_fmt(ci_low, 2)}, {_fmt(ci_high, 2)})\n")
+            # confidence intervals for intensity (coherence in log10)
+            ci_log10 = diagnostics.get("ci_5_95_log10", None)
+            if ci_log10 is None or len(ci_log10) != 2:
+                f.write(f"{'CI 5–95% (log10):':<34} (NA, NA)\n")
+            else:
+                ci_low_log10, ci_high_log10 = ci_log10
+                f.write(f"{'CI 5–95% (log10):':<34} ({_fmt(ci_low_log10, 2)}, {_fmt(ci_high_log10, 2)})\n")
+            f.write(f"{'Last-10-trial accuracy:':<34} {_fmt(diagnostics.get('last10_accuracy'), 2)}\n")
+            f.write("\nRESPONSE BIAS (POST-HOC; Right treated as positive)\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"{'P(Right stimulus):':<34} {_fmt(diagnostics.get('p_right_stimulus'), 3)}\n")
+            f.write(f"{'P(Right response):':<34} {_fmt(diagnostics.get('p_right_response'), 3)}\n")
+            f.write(f"{'Precision (Right):':<34} {_fmt(diagnostics.get('bias_precision_right'), 3)}\n")
+            f.write(f"{'Recall (Right):':<34} {_fmt(diagnostics.get('bias_recall_right'), 3)}\n")
+            f.write(f"{'F1 (Right):':<34} {_fmt(diagnostics.get('bias_f1_right'), 3)}\n")
+
         
         # Save diagnostic plot using the same base name as the CSV
         diag_base = self.results_csv_path.replace(".csv", "")

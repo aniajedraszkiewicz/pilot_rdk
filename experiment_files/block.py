@@ -8,6 +8,71 @@ import hashlib
 from .helpers import get_block_intro_text, get_block_outro_text
 
 
+  
+def compute_bias_metrics_right_positive(true_labels, pred_labels):
+    """
+    Compute post-hoc response bias diagnostics treating Right as the positive class. 
+    Intended ONLY for quick sanity checks ("is the participant over-responding Right?"); this is not a standard classification task; the primary goal of the experiment is to
+    estimate the relationship between stimulus properties and the probability of a correct response.
+    true_labels: 1 if direction==0 (Right) else 0 (Left-180°)(reflects what was shown on the screen)
+    pred_labels: 1 if response_key=='right' else 0 (reflects what the participant reported)  
+    
+    Computed quantities
+    -------------------
+    tp (true positives):
+        Right stimulus correctly identified as Right
+
+    fp (false positives):
+        Left incorrectly reported as Right
+
+    fn (false negatives):
+        Right incorrectly reported as Left
+
+    precision (Right):
+        P(Right stimulus | Right response)
+        → When the participant says "Right", how often is that correct?
+
+    recall (Right):
+        P(Right response | Right stimulus)
+        → When the stimulus is Right, how often does the participant say "Right"?
+
+    f1 (Right):
+        Harmonic mean of precision and recall.
+        → Single summary of Right-response bias consistency
+
+    p_right_stimulus:
+        Base rate of Right stimuli in the trials
+
+    p_right_response:
+        Base rate of Right responses given by the participant
+    """
+    y_true = np.asarray(true_labels, dtype=int)
+    y_pred = np.asarray(pred_labels, dtype=int)
+
+    if y_true.size == 0:
+        return {
+            "bias_precision_right": np.nan,
+            "bias_recall_right": np.nan,
+            "bias_f1_right": np.nan,
+            "p_right_stimulus": np.nan,
+            "p_right_response": np.nan,
+        }
+
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else np.nan
+    recall = tp / (tp + fn) if (tp + fn) > 0 else np.nan
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else np.nan
+
+    return {
+        "bias_precision_right": float(precision),
+        "bias_recall_right": float(recall),
+        "bias_f1_right": float(f1),
+        "p_right_stimulus": float(np.mean(y_true == 1)),
+        "p_right_response": float(np.mean(y_pred == 1)),
+    }
 
 class Block:
     """
@@ -16,14 +81,15 @@ class Block:
         - shows a fixation cross before each trial,
         - controls the between-trial sequence (fixation → choose coherence/direction → run Trial → check correctness → log),
         - marks responses as correct/incorrect,
-        - updates QUEST based on correctness (so the next trial’s coherence is chosen adaptively),
+        - updates the QUEST posterior based on trial outcomes to adaptively select
+          the coherence level for the next trial,
         - randomizes direction using a local, seeded RNG (separate from the dot RNG),
         - returns basic QUEST diagnostics at the end of the block.
     
     QUEST (Guénot et al., 2023): Bayesian adaptive method that chooses coherence each trial to estimate the ~82% correct threshold.
-    It starts from a prior (initial guess + uncertainty) and updates the threshold estimate after each response.
+    It starts from a prior (initial guess + uncertainty) and updates the posterior threshold estimate after each response.
     Similar to a staircase (harder after correct, easier after incorrect), but QUEST uses all past responses
-    via the posterior estimate instead of a fixed up/down rule.
+    via the posterior mean estimate instead of a fixed up/down rule.
     """
 
     # ------------------------ Store block configuration ------------------------
@@ -170,26 +236,38 @@ class Block:
                 w.writeheader()
             w.writerow(row)
     
-
     # ------------------------ Initialize QUEST ------------------------
 
     # Run one QUEST block: loop over adaptive trials, update QUEST from correctness, and log each trial
     def run_block(self):  
 
-        # Initialize QUEST (parameters from Guénot et al., 2023): choose coherence via ML estimate
+        # Coherence shown to participants (linear units)
+        start_coh = 0.58
+        min_coh = 0.02
+        max_coh = 0.9
+
+        # PsychoPy QuestHandler "intensity" is log10 units, so convert coherence -> log10(coherence)
+        start_intensity_log10 = float(np.log10(start_coh))
+        min_intensity_log10 = float(np.log10(min_coh))
+        max_intensity_log10 = float(np.log10(max_coh))
+
+        # startValSd must be in same units as startVal (log10 units here)
+        start_intensity_sd_log10 = 0.30
+
+        # Initialize QUEST (parameters from Guénot et al., 2023): choose coherence via quantile selection
         quest = data.QuestHandler(
-            startVal=0.58,          # prior mean: initial threshold guess (coherence)
-            startValSd=0.40,        # prior SD: uncertainty about the initial guess
-            pThreshold=0.82,        # target performance level (82% correct - which is equivalent 
-                                    # to a 3 up 1 down standard staircase; PsychoPy QuestHandler documentation)
-            gamma=0.5,              # 2AFC guessing rate (left/right → chance = 50%)
-            beta=3.5,               # Weibull slope (steepness of the psychometric curve)
-            delta=0.01,             # lapse rate (~1% random mistakes)
-            nTrials=64,             # number of adaptive trials (set to 64)
-            minVal=0.02,            # lower bound for coherence (avoid 0 signal)
-            maxVal=0.9,             # upper bound for coherence
-            method = 'quantile',    # choose next coherence from the current posterior
-            stimScale='linear'
+            startVal=start_intensity_log10,             # prior mean: initial threshold guess (log10 coherence)
+            startValSd=start_intensity_sd_log10,        # prior SD in log10: uncertainty about the initial guess
+            pThreshold=0.82,                            # target performance level (82% correct - which is equivalent 
+                                                        # to a 3 up 1 down standard staircase; PsychoPy QuestHandler documentation)
+            gamma=0.5,                                  # 2AFC guessing rate (left/right → chance = 50%)
+            beta=3.5,                                   # Weibull slope (steepness of the psychometric curve)
+            delta=0.02,                                 # lapse rate (~2% random mistakes)
+            nTrials=64,                                 # number of adaptive trials (set to 64)
+            minVal=min_intensity_log10,                 # lower bound for log10 coherence (avoid 0 signal)
+            maxVal=max_intensity_log10,                 # upper bound for log10 coherence
+            grain=0.002,                                # step size in intensity units (log10)
+            method = 'quantile',                        # choose next intensity from the current posterior
         )
 
 
@@ -197,26 +275,24 @@ class Block:
         trial_runner = Trial(self.win, self.kb, self.rdk, self.max_stim_sec, debug=self.debug) 
     
         # Collect the running threshold estimate after each QUEST update
-        trial_thresholds = []
-        
-        # Store the first QUEST intensity (coherence) shown in this block
-        quest_first_intensity = None
+        threshold_estimates_history_log10 = []
+        threshold_estimates_history_coh = []
 
+        # Collect labels for post-hoc bias diagnostics (exclude timeouts)
+        bias_y_true = []  # 1 = Right stimulus (direction==0), 0 = Left stimulus (direction==180)
+        bias_y_pred = []  # 1 = Right response, 0 = Left/other response
 
         # ------------------------ Run adaptive trials and log results ------------------------
 
-        # QuestHandler in PsychoPy calls the stimulus level "intensity".
-        # With stimScale="linear", QUEST intensities are linear coherence values (minValue-maxValue).
-        # So startVal/minVal/maxVal are coherences, and quest.mean() returns a coherence threshold estimate.
+        # QuestHandler calls the stimulus level "intensity".
+        # Here, intensity = log10(coherence), so convert via coherence = 10**intensity.
+        # startVal / minVal / maxVal are specified in log10(coherence) units.
+        # quest.mean() returns a threshold estimate in log10(coherence).
         for trial_index, intensity in enumerate(quest):
-            
-            
+
             # Convert QUEST "intensity" to the coherence used by the stimulus
-            coherence = float(intensity)
-            
-            # Store only first coherence
-            if quest_first_intensity is None:
-                quest_first_intensity = coherence
+            intensity = float(intensity)
+            coherence = float(10 ** intensity)
 
             # Reset fixation timing from the previous trial, then show fixation and store its timing in self.last_fix
             self.last_fix = None
@@ -243,16 +319,28 @@ class Block:
             # Define the correct response key for this direction (0° = right, 180° = left).
             correct_key = 'right' if direction == 0 else 'left'
             
+            # Collect data for post-hoc bias diagnostics (exclude timeouts)
+            if not result.get("timeout"):
+                true_label = 1 if direction == 0 else 0
+                resp = (result.get("response_key") or "").lower()
+                pred_label = 1 if resp == "right" else 0
+                bias_y_true.append(true_label)
+                bias_y_pred.append(pred_label)
+            
             # Mark correctness for QUEST (treat timeout as incorrect).
             is_correct = 0 if result["timeout"] else int(result["response_key"] == correct_key)
 
-            # Record the trial outcome in the QUEST algorithm so it can update its internal
-            # threshold estimate and choose the coherence for the next trial
-            quest.addResponse(is_correct)
+            # Record trial correctness in QUEST so the posterior threshold estimate
+            # is updated and the next coherence level can be selected adaptively
+            quest.addResponse(is_correct, intensity=intensity)
 
-            # Store the current threshold estimate after the update (for plots/diagnostics)
-            trial_thresholds.append(float(quest.mean()))
+            # Store current threshold estimate AFTER the update (posterior mean; log10 units)
+            threshold_estimate_log10 = float(quest.mean())
+            threshold_estimate_coh = float(10 ** threshold_estimate_log10)
 
+            # Store the trajectory of threshold estimates
+            threshold_estimates_history_log10.append(threshold_estimate_log10)
+            threshold_estimates_history_coh.append(threshold_estimate_coh)
 
             # Build one CSV row: trial settings + response + timing + fixation timing
             row = {
@@ -262,7 +350,10 @@ class Block:
                 "trial_no": trial_index + 1,
                 "condition": "quest_pilot",
                 "direction": direction,
-                "coherence": float(coherence),
+                "coherence": float(coherence), # motion coherence shown on this trial (linear units used by the stimulus)
+                "intensity_log10": float(intensity), # QUEST intensity for this trial = log10(coherence)
+                "threshold_estimate_log10": threshold_estimate_log10,  # current QUEST threshold estimate after this trial (intensity = log10 coherence)
+                "threshold_estimate_coh": threshold_estimate_coh, # same threshold estimate converted to linear coherence
                 "response_key": result.get("response_key"),
                 "correct_key": correct_key,
                 "is_correct": is_correct,
@@ -286,38 +377,74 @@ class Block:
             # Append this trial row to the results CSV 
             self.append_log_row(self.results_csv_path, row, self.results_header)
             
-        
+       
         # ------------------------ Summarize threshold and return diagnostics ------------------------
 
-        # Compute the final threshold estimate after the last QUEST update.
-        final_threshold = float(quest.mean())
+        # Final threshold estimates after the last QUEST update. 
+        # QUEST outputs are in log10(coherence); converted to coherence for reporting.
+        # Note: not all quantities computed here are necessarily written to the text summary;
+        # this section can be extended to compute additional diagnostics as needed.
+        final_mean_log10 = float(quest.mean())      # posterior mean threshold (log10)
+        final_mode_log10 = float(quest.mode())      # posterior mode (log10)
+        final_sd_log10 = float(quest.sd())          # posterior SD (log10)
 
-        # Compute the range of QUEST intensities used to verify the coherence span
-        quest_intensities = [float(x) for x in quest.intensities]
-        quest_intensity_min = min(quest_intensities) if quest_intensities else None
-        quest_intensity_max = max(quest_intensities) if quest_intensities else None
+        # Convert threshold estimates from log10 units to linear coherence
+        final_mean_coh = float(10 ** final_mean_log10)
+        final_mode_coh = float(10 ** final_mode_log10)
 
-        # Compute summary diagnostics 
-        ci = quest.confInterval()   # Get QUEST confidence interval for the threshold (5th–95th percentile)
+        # 5–95% credible interval from QUEST (returned in log10 units)
+        ci_log10 = quest.confInterval()
+        ci_coh = (float(10 ** float(ci_log10[0])), float(10 ** float(ci_log10[1])))
+
+        # Intensities actually presented during the block
+        intensities_log10 = [float(x) for x in quest.intensities] #log10 unit
+        stimuli_coh = [float(10 ** x) for x in intensities_log10] #linear coherence unit
+
         
+        # Compute summary diagnostics 
+        bias_metrics = compute_bias_metrics_right_positive(bias_y_true, bias_y_pred)
+
         diagnostics = {
-            "quest_first_intensity": float(quest_first_intensity) if quest_first_intensity is not None else None,
-            "quest_intensity_min": float(quest_intensity_min) if quest_intensity_min is not None else None,
-            "quest_intensity_max": float(quest_intensity_max) if quest_intensity_max is not None else None,
-            "mean": final_threshold,                                  # Final threshold estimate (same as quest.mean() at the end)
-            "sd": float(quest.sd()),                                  # Uncertainty (SD) of the current threshold posterior
-            "mode": float(quest.mode()),                              # Most likely threshold value (posterior mode)
-            "stimuli_used": list(quest.intensities),                  # Coherence values QUEST used across trials
-            "responses": list(quest.data),                            # Trial outcomes added to QUEST (1=correct, 0=incorrect/timeout)
-            "threshold_estimates": trial_thresholds,                  # Running quest.mean() after each update (trajectory over trials)
-            "ci_5_95": (float(ci[0]), float(ci[1])),
-            "overall_accuracy": float(np.mean(quest.data)),           # Mean correctness across all QUEST trials
-            "last10_accuracy": float(np.mean(list(quest.data)[-10:])) # Mean correctness in the last 10 trials (stability check)
+            "quest_start_coh": float(start_coh),
+            "quest_min_coh": float(min_coh),
+            "quest_max_coh": float(max_coh),
+            "quest_start_intensity_log10": float(quest.startVal),
+            "quest_start_intensity_sd_log10": float(quest.startValSd),
+            "quest_min_intensity_log10": float(quest.minVal),
+            "quest_max_intensity_log10": float(quest.maxVal),
+            "quest_pThreshold": float(quest.pThreshold),
+            "quest_gamma": float(quest.gamma),
+            "quest_beta": float(quest.beta),
+            "quest_delta": float(quest.delta),
+            "quest_nTrials": int(quest.nTrials),
+            "quest_method": quest.method,
+            "quest_grain": quest.grain,   
+            "coh_min_used": float(min(stimuli_coh)) if stimuli_coh else None,
+            "coh_max_used": float(max(stimuli_coh)) if stimuli_coh else None,
+            "mean_coh": final_mean_coh,
+            "mode_coh": final_mode_coh,
+            "mean_log10": final_mean_log10,
+            "mode_log10": final_mode_log10, 
+            "sd_log10": final_sd_log10,
+            "stimuli_used": stimuli_coh,
+            "stimuli_used_log10": intensities_log10,
+            "responses": list(quest.data),
+            "threshold_estimates": threshold_estimates_history_coh,
+            "threshold_estimates_log10": threshold_estimates_history_log10,
+            "ci_5_95_coh": ci_coh,
+            "ci_5_95_log10": ci_log10,
+            "overall_accuracy": float(np.mean(quest.data)),
+            "last10_accuracy": float(np.mean(list(quest.data)[-10:])),
+            "bias_precision_right": bias_metrics["bias_precision_right"],
+            "bias_recall_right": bias_metrics["bias_recall_right"],
+            "bias_f1_right": bias_metrics["bias_f1_right"],
+            "p_right_stimulus": bias_metrics["p_right_stimulus"],
+            "p_right_response": bias_metrics["p_right_response"],
         }
 
         return diagnostics
     
-
+    
     # Close the PsychoPy window and exit
     def quit(self):
         self.win.close()
