@@ -31,7 +31,7 @@ def get_block_intro_text(block_no):
     body_by_block = {
         1: "In a moment, you will see dots moving on the screen.\n\n"
     "The dots will move continuously and their movement may change over time.\n\n"
-    "Your task is to decide, as quickly and accurately as possible, whether most of the dots are moving to the left or to the right.\n\n"
+    "Your task is to press a key as soon as you think you know the answer: whether most of the dots are moving to the left or to the right.\n\n"
     "Press the LEFT arrow key if most dots move left.\n"
     "Press the RIGHT arrow key if most dots move right.",
         2: "Main task. Trials are randomized.",

@@ -86,7 +86,8 @@ class Block:
         - randomizes direction using a local, seeded RNG (separate from the dot RNG),
         - returns basic QUEST diagnostics at the end of the block.
     
-    QUEST (Guénot et al., 2023): Bayesian adaptive method that chooses coherence each trial to estimate the ~82% correct threshold.
+    QUEST (Guénot et al., 2023): Bayesian adaptive method that chooses coherence each trial to estimate
+    the coherence threshold corresponding to a target performance level of approximately 82% correct.
     It starts from a prior (initial guess + uncertainty) and updates the posterior threshold estimate after each response.
     Similar to a staircase (harder after correct, easier after incorrect), but QUEST uses all past responses
     via the posterior mean estimate instead of a fixed up/down rule.
@@ -266,7 +267,7 @@ class Block:
             nTrials=64,                                 # number of adaptive trials (set to 64)
             minVal=min_intensity_log10,                 # lower bound for log10 coherence (avoid 0 signal)
             maxVal=max_intensity_log10,                 # upper bound for log10 coherence
-            grain=0.002,                                # step size in intensity units (log10)
+            grain=0.02,                                # step size in intensity units (log10)
             method = 'quantile',                        # choose next intensity from the current posterior
         )
 
