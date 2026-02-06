@@ -137,7 +137,7 @@ class Block:
             msg = visual.TextStim(
                 self.win,
                 text=f"{title}\n\n{body}\n\nPress SPACE to start\n(ESC to quit)",
-                height=0.9,
+                height=0.7,
                 color='white',
                 wrapWidth=20
             )
@@ -267,7 +267,7 @@ class Block:
             nTrials=64,                                 # number of adaptive trials (set to 64)
             minVal=min_intensity_log10,                 # lower bound for log10 coherence (avoid 0 signal)
             maxVal=max_intensity_log10,                 # upper bound for log10 coherence
-            grain=0.02,                                # step size in intensity units (log10)
+            grain=0.02,                                 # step size in intensity units (log10)
             method = 'quantile',                        # choose next intensity from the current posterior
         )
 

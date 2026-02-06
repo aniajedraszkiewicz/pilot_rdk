@@ -33,7 +33,9 @@ def get_block_intro_text(block_no):
     "The dots will move continuously and their movement may change over time.\n\n"
     "Your task is to press a key as soon as you think you know the answer: whether most of the dots are moving to the left or to the right.\n\n"
     "Press the LEFT arrow key if most dots move left.\n"
-    "Press the RIGHT arrow key if most dots move right.",
+    "Press the RIGHT arrow key if most dots move right.\n\n"
+    "After each response, a small cross will appear on the screen. "
+   "Please look at the cross and keep your eyes on it until the next trial starts.",
         2: "Main task. Trials are randomized.",
         3: "Main task. Trials are randomized.",
     }

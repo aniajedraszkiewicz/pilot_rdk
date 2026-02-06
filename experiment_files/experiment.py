@@ -17,6 +17,7 @@ from psychopy.hardware import keyboard
 from datetime import datetime
 import numpy as np
 import hashlib
+import secrets
 
 import matplotlib
 matplotlib.use("Agg")     # non-interactive backend (needed for saving PNGs without opening a window)
@@ -35,10 +36,6 @@ prefs.hardware['keyboard'] = 'iohub'
 # Import experiment components
 from .block import Block
 from .rdk_stim import RDK
-
-
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 def plot_diagnostics(diagnostics, base_path):
@@ -161,16 +158,22 @@ class Experiment:
 
         # Store choices from the dialog. This removes characters forbidden by Windows filesystems
         # and strips trailing dots or spaces, which can also cause file-saving errors.
-        raw = str(self.expInfo.get("participant", "")).strip() or "UNKNOWN"
-        self.subject_id = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", raw).strip().strip(".") or "UNKNOWN"
+        raw = str(self.expInfo.get("participant", "")).strip()
+
+        # If no ID provided, use a simple test label (NOT unique)
+        self.subject_id = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", raw).strip().strip(".")
+        if self.subject_id == "":
+            self.subject_id = "TEST"
 
         # Store fullscreen choice.
         self.fullscr = bool(self.expInfo.get("fullscr", True))
 
-        # Prepare output location and a unique filename. Results are stored in ./results relative to the script directory
+        # Prepare output location and a unique run identifier
         os.makedirs("results", exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.results_csv_path = os.path.join("results", f"{self.subject_id}_{stamp}.csv")
+        self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + secrets.token_hex(2)
+
+        # Short, clean filename (no subject ID duplication)
+        self.results_csv_path = os.path.join("results", f"{self.run_id}.csv")
     
     # Create a PsychoPy Monitor (geometry container) and the PsychoPy Window
     def create_window_and_monitor(self):
@@ -323,7 +326,7 @@ class Experiment:
         self.kb.clearEvents()
     
         # Create subject-specific RNG for the RDK dot stream 
-        base = f"RDK|{self.subject_id}".encode("utf-8")
+        base = f"RDK|{self.subject_id}|{self.run_id}".encode("utf-8")
         digest = hashlib.sha256(base).hexdigest()
         seed_rdk = int(digest[:8], 16)  # first 8 hex digits -> 32-bit int
         self.rdk_seed = seed_rdk
@@ -363,6 +366,7 @@ class Experiment:
             f.write("=" * 60 + "\n")
             f.write(self._line("Participant:", self.subject_id))
             f.write(self._line("Timestamp:", datetime.now().isoformat(timespec="seconds")))
+            f.write(self._line("Run ID:", self.run_id))
 
             # Timing / display
             f.write(self._section("DISPLAY TIMING"))
@@ -380,7 +384,7 @@ class Experiment:
             # Stimulus parameters 
             f.write(self._section("RDK STIMULUS"))
             f.write(self._line("Dot speed (deg/s):", self.dot_speed))
-            f.write(self._line("Dot density (dots/deg²/s):", self.dot_density))
+            f.write(self._line("Dot density (dots/deg²):", self.dot_density))
             f.write(self._line("Total dots:", self.rdk.n_dots))
             f.write(self._line("Field diameter (deg):", self.rdk.field_diameter))
 
@@ -452,6 +456,7 @@ class Experiment:
         with open(summary_path, "a", encoding="utf-8") as f:
             f.write(self._section("RNG SEEDS"))
             f.write(self._line("RDK seed (dot-level randomness):", self.rdk_seed))
+            f.write(self._line("RDK seed base:", f"RDK|{self.subject_id}|{self.run_id}"))
             f.write(self._line("Block seed (direction RNG):", block.block_seed))
 
         # Show instructions before starting trials

@@ -3,41 +3,6 @@ from __future__ import division
 import numpy as np
 from psychopy import visual
 
-# ------------------------ Changes in relation to previous version ------------------------
-#
-# -- Used truly circular sampling: dots are always sampled and respawned uniformly within the circular aperture,
-#    not from a square region. In the older code, the mask in visual.ElementArrayStim was 'circle', but it didn't
-#    actually control how the dots were sampled and respawned, and when I increased dot density the aperture shape
-#    visibly looked like a square. In most of the studies I analysed, the aperture is circular, which is often
-#    motivated by the goal of avoiding directional bias that can occur if the edges of a square are also full of dots
-#
-# -- Created ElementArrayStim with the full pool of dots (n_dots). Sequences and activity are managed via masks
-#    and update rules, rather than by changing the number of elements in the stimulus. In the original code, dot
-#    density was specified as 16.7 dots/deg²/sec, but because nElements was set to n_dots_in_sequence instead of
-#    n_dots (the entire dot pool), the visible density was smaller: only one sequence of dots was visible per frame.
-#    The Movshon–Newsome algorithm actually assumes that all dots are always present, and only one group is UPDATED
-#    per frame (not hidden).
-#
-# -- Displacement in degrees of visual angle only, no mixing of degree and position units. Earlier there was a normalization to an
-#    aperture radius equal to 1 (a normalized / unit-circle coordinate system), which can be convenient for some
-#    calculations (e.g. marking outside dots as those with radius > 1), but makes unit tracking harder. Here I keep
-#    everything in degrees of visual angle for clarity and to match PsychoPy's units='deg'.
-#
-# -- Stored state variables (e.g. active dot mask, coordinates, sequence index) as attributes on self so it is easier
-#    to compute updated statistics for debugging and logging.
-#
-# -- Used a local random number generator instead of the global one, so that dot positions and sequences are
-#    reproducible and independent of other randomness in the code.
-#
-# -- Edge handling: I considered separate approaches for signal and noise dots, but this is probably unnecessary here,
-#    because dots only rarely leave the circular aperture with the current parameters.
-#
-# -- Introduced dot lifetime tracking. Each dot, regardless of whether it is in the active sequence or not, has a
-#    maximum age of max_lifetime_frames = 12 video frames. On every frame, all dot_lifetimes are incremented by 1.
-#    When a dot’s lifetime reaches max_lifetime_frames (or it leaves the aperture), it is respawned at a new random
-#    location inside the circular field and its lifetime is reset to 0.
-#    Note: dots belong to 1 of 3 interleaved sequences, so their motion is updated only every 3rd frame, but lifetime
-#    is counted on EVERY frame.
 
 # ------------------------ Define and initialize class and set global parameters ------------------------
 
@@ -92,7 +57,8 @@ class RDK:
 
         # ----- Total number of dots -----
 
-        # Calculate the area of the circular field where dots are sampled and respawned; area of a circle = π * radius^2  [deg²]
+        # Calculate the area of the circular field where dots are sampled and respawned; area of a circle = π * radius^2  [deg²].
+        # The aperture is circular to avoid directional bias that can occur if the edges of a square are also filled with dots.
         field_area = np.pi * self.field_radius**2
 
         # Calculate the total number of dots in the pool 
@@ -125,7 +91,13 @@ class RDK:
         
         # ----- Lifetime tracking -----
 
-        # Lifetime tracking: how long each dot has been on screen (in frames) and how many expired on the last frame
+        # Lifetime tracking: how long each dot has been on screen (in frames) and how many expired on the last frame. 
+        # Each dot, regardless of whether it is in the active sequence or not, has a
+        # maximum age of max_lifetime_frames = 12 video frames. On every frame, all dot_lifetimes are incremented by 1.
+        # When a dot’s lifetime reaches max_lifetime_frames (or it leaves the aperture), it is respawned at a new random
+        # location inside the circular field and its lifetime is reset to 0.
+        # Note: dots belong to 1 of 3 interleaved sequences, so their motion is updated only every 3rd frame, but lifetime
+        # is counted on EVERY frame.
         self.max_lifetime_frames = int(max_lifetime_frames)   # max age before a dot is respawned
         self.dot_lifetimes = np.zeros(self.n_dots, dtype=int) # current age of each dot (in frames)
         self.n_expired_last = 0                               # number of dots that expired on the previous frame
@@ -251,7 +223,9 @@ class RDK:
 
         
         # Reset lifetimes and diagnostics at the start of each trial.
-        self.dot_lifetimes[:] = 0   # one integer per dot, counting how many frames the dot has been on screen
+        self.dot_lifetimes[:] = self.rng.integers(low=0, high=self.max_lifetime_frames, size=self.n_dots, dtype=int)  # one integer per dot: initial dot lifetimes are randomly 
+                                                                                                                      # sampled between 0 and the maximum lifetime so that dot expiration and respawning 
+                                                                                                                      # are spread out over time rather than synchronized
         self.n_outside_last = 0     # number of dots respawned for leaving the aperture on the last update
         self.n_expired_last = 0     # number of dots respawned for exceeding max_lifetime_frames on the last update
 
@@ -371,6 +345,8 @@ class RDK:
 
         # After updating signal and noise positions, fix any dots that are outside the aperture
         # or have exceeded their lifetime by respawning them inside the circle and resetting lifetime.
+        # Edge handling: some implementations use separate approaches for signal and noise dots, 
+        # but this was deemed unnecessary here, because dots rarely leave the circular aperture with the current parameters.
         x_all = self.dots_coordinates[0, :]   # [deg]
         y_all = self.dots_coordinates[1, :]   # [deg]
 
