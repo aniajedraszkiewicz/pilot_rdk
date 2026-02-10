@@ -113,7 +113,7 @@ class RDK:
             fieldShape='circle',        # documents that this stimulus is intended as a circular field,
                                         # but the actual sampling from the the circle are handled manually in the code.
             elementMask='circle',       # render each dot as a circle
-            sizes=0.06,                 # size of each dot in degrees of visual angle
+            sizes=0.08,                 # size of each dot in degrees of visual angle
             nElements = self.n_dots,    # total number of dots in the pool
             units='deg', 
             fieldSize = self.field_diameter)  
@@ -391,7 +391,7 @@ class RDK:
 
         # xys is passed to the ElementArrayStim (dots_stim) to update all dot positions in the stimulus
         self.dots_stim.setXYs(xys)
-        
+                        
         return self.active_dots_mask, self.dots_coordinates, self.current_sequence_index
     
 # ---------------------------------------------------------

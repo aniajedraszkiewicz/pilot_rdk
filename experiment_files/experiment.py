@@ -42,74 +42,51 @@ def plot_diagnostics(diagnostics, base_path):
     """
     Plot QUEST diagnostics across trials.
 
-    Top panel (stimulus space):
+    Panel:
         - Posterior threshold estimates in coherence (linear units)
         - Coherence values actually presented on each trial
 
-    Bottom panel (internal QUEST space):
-        - Posterior threshold estimates in log10 units
-        - Intensities (log10 coherence) actually presented on each trial
-
-    Both panels share the same x-axis (trial number)
+    X-axis: trial number
     """
     # Extract data
     thresh_coh = diagnostics["threshold_estimates"]
-    thresh_log10 = diagnostics["threshold_estimates_log10"]
-
     stim_coh = diagnostics.get("stimuli_used", None)
-    stim_log10 = diagnostics.get("stimuli_used_log10", None)
 
     # Number of trials completed in this QUEST block
     n = len(thresh_coh)
     trial_nums = np.arange(1, n + 1)
 
     # Create figure
-    fig, (ax_top, ax_bottom) = plt.subplots(
-        2, 1, figsize=(8, 6), sharex=True
-    )
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
 
-    # Top panel
-    ax_top.plot(
+    ax.plot(
         trial_nums, thresh_coh,
         "o-", label="Threshold estimate (coherence)",
         linewidth=2
     )
 
     if stim_coh is not None and len(stim_coh) == n:
-        ax_top.plot(
+        ax.plot(
             trial_nums, stim_coh,
             "x", label="Stimulus shown (coherence)",
             alpha=0.8
         ) 
 
-    ax_top.set_ylabel("Coherence (linear)")
-    ax_top.set_title("QUEST diagnostics — coherence space")
-    ax_top.grid(True)
-    ax_top.legend(fontsize=8)
+    ax.set_ylabel("Coherence (linear)")
+    ax.set_xlabel("Trial")
+    ax.set_title("QUEST diagnostics — coherence space")
+    ax.grid(True)
+    ax.legend(fontsize=8)
 
-    # Bottom panel: log10
-    ax_bottom.plot(
-        trial_nums, thresh_log10,
-        "o--", label="Threshold estimate (log10)",
-        linewidth=2
-    )
+    y_max = max(1.0, np.nanmax(thresh_coh))
+    if stim_coh is not None:
+        y_max = max(y_max, np.nanmax(stim_coh))
 
-    if stim_log10 is not None and len(stim_log10) == n:
-        ax_bottom.plot(
-            trial_nums, stim_log10,
-            "x", label="Stimulus shown (log10)",
-            alpha=0.8
-        )
-
-    ax_bottom.set_ylabel("Intensity (log10 units)")
-    ax_bottom.set_xlabel("Trial")
-    ax_bottom.set_title("QUEST diagnostics — internal log10 space")
-    ax_bottom.grid(True)
-    ax_bottom.legend(fontsize=8)
-
+    ax.set_ylim(0, y_max)
+    ax.set_yticks(np.linspace(0, y_max, 6))
     # Final formatting
     step = 2 if n <= 80 else 4  # Reduce x-tick density for larger numbers of trials to keep the x-axis readable
-    ax_bottom.set_xticks(np.arange(1, n + 1, step))
+    ax.set_xticks(np.arange(1, n + 1, step))
 
     fig.tight_layout()
     fig.savefig(base_path + "_quest_diagnostics.png")
