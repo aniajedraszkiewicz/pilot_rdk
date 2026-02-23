@@ -32,7 +32,7 @@ Automated tests verifying correctness, stability, and reproducibility.
 - **`test_exp_core.py`** – headless-safe tests for Experiment setup (window creation via stubs, refresh-rate math, summary writing, etc.).
 - **`test_rdk_stim.py`** – validates RDK initialization, dot updating, and sequence cycling.
 - **`test_single_trial.py`** – verifies timing, keyboard handling, and single-trial logic.
-- **`test_quest.py`** – unit tests for the pilot’s QUEST procedure (no real windows): parameter sanity, intensity bounds, basic convergence, and a fast mocked `Block.run_block()` (64 trials), including automatic handling of QUEST output scale (linear vs log10).
+- **`test_quest.py`** – unit tests for the pilot’s QUEST procedure (no real windows): parameter sanity, intensity bounds, basic convergence, and a fast mocked `Block.run_block()` (64 trials)
 
 ---
 
