@@ -179,7 +179,8 @@ class Experiment:
             monitor=mon,
             units="deg",
             fullscr=self.fullscr,
-            color="black",
+            color=[-1, -1, -1],
+            colorSpace='rgb',
             waitBlanking=True,   # try to sync flips to the monitor refresh (vsync) for more stable frame timing
             useFBO=True,         # off-screen rendering; improves frame timing stability on some computers
         )
@@ -501,13 +502,12 @@ class Experiment:
                 ci_low_log10, ci_high_log10 = ci_log10
                 f.write(f"{'CI 5–95% (log10):':<34} ({_fmt(ci_low_log10, 2)}, {_fmt(ci_high_log10, 2)})\n")
             f.write(f"{'Last-10-trial accuracy:':<34} {_fmt(diagnostics.get('last10_accuracy'), 2)}\n")
-            f.write("\nRESPONSE BIAS (POST-HOC; Right treated as positive)\n")
+            f.write("\nRESPONSE BIAS (POST-HOC)\n")
             f.write("=" * 60 + "\n")
-            f.write(f"{'P(Right stimulus):':<34} {_fmt(diagnostics.get('p_right_stimulus'), 3)}\n")
-            f.write(f"{'P(Right response):':<34} {_fmt(diagnostics.get('p_right_response'), 3)}\n")
-            f.write(f"{'Precision (Right):':<34} {_fmt(diagnostics.get('bias_precision_right'), 3)}\n")
-            f.write(f"{'Recall (Right):':<34} {_fmt(diagnostics.get('bias_recall_right'), 3)}\n")
-            f.write(f"{'F1 (Right):':<34} {_fmt(diagnostics.get('bias_f1_right'), 3)}\n")
+            f.write(f"{'Sensitivity':<34} "
+                    f"{_fmt(diagnostics.get('bias_sensitivity_right'), 2)}\n")
+            f.write(f"{'Specificity':<34} "
+                    f"{_fmt(diagnostics.get('bias_specificity_right'), 2)}\n")
 
         
         # Save diagnostic plot using the same base name as the CSV

@@ -116,7 +116,10 @@ class RDK:
             sizes=0.08,                 # size of each dot in degrees of visual angle
             nElements = self.n_dots,    # total number of dots in the pool
             units='deg', 
-            fieldSize = self.field_diameter)  
+            fieldSize = self.field_diameter,
+            colors=[0.9, 0.9, 0.9],   # dot color (reference: [1,1,1] is max white)
+            colorSpace='rgb',         # defines what the numbers mean
+            )  
 
 
 # ------------------------------ Initialize stimulus -----------------------------

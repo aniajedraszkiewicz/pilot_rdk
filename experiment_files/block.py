@@ -8,72 +8,6 @@ import hashlib
 from .helpers import get_block_intro_text, get_block_outro_text
 
 
-  
-def compute_bias_metrics_right_positive(true_labels, pred_labels):
-    """
-    Compute post-hoc response bias diagnostics treating Right as the positive class. 
-    Intended ONLY for quick sanity checks ("is the participant over-responding Right?"); this is not a standard classification task; the primary goal of the experiment is to
-    estimate the relationship between stimulus properties and the probability of a correct response.
-    true_labels: 1 if direction==0 (Right) else 0 (Left-180°)(reflects what was shown on the screen)
-    pred_labels: 1 if response_key=='right' else 0 (reflects what the participant reported)  
-    
-    Computed quantities
-    -------------------
-    tp (true positives):
-        Right stimulus correctly identified as Right
-
-    fp (false positives):
-        Left incorrectly reported as Right
-
-    fn (false negatives):
-        Right incorrectly reported as Left
-
-    precision (Right):
-        P(Right stimulus | Right response)
-        → When the participant says "Right", how often is that correct?
-
-    recall (Right):
-        P(Right response | Right stimulus)
-        → When the stimulus is Right, how often does the participant say "Right"?
-
-    f1 (Right):
-        Harmonic mean of precision and recall.
-        → Single summary of Right-response bias consistency
-
-    p_right_stimulus:
-        Base rate of Right stimuli in the trials
-
-    p_right_response:
-        Base rate of Right responses given by the participant
-    """
-    y_true = np.asarray(true_labels, dtype=int)
-    y_pred = np.asarray(pred_labels, dtype=int)
-
-    if y_true.size == 0:
-        return {
-            "bias_precision_right": np.nan,
-            "bias_recall_right": np.nan,
-            "bias_f1_right": np.nan,
-            "p_right_stimulus": np.nan,
-            "p_right_response": np.nan,
-        }
-
-    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
-    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
-    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
-
-    precision = tp / (tp + fp) if (tp + fp) > 0 else np.nan
-    recall = tp / (tp + fn) if (tp + fn) > 0 else np.nan
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else np.nan
-
-    return {
-        "bias_precision_right": float(precision),
-        "bias_recall_right": float(recall),
-        "bias_f1_right": float(f1),
-        "p_right_stimulus": float(np.mean(y_true == 1)),
-        "p_right_response": float(np.mean(y_pred == 1)),
-    }
-
 class Block:
     """
     This class runs one block of trials. It uses the Trial class, and also:
@@ -130,35 +64,35 @@ class Block:
 
     # Display the block intro screen (press SPACE to start, ESC to quit) 
     def show_intro(self):
-             # Get the title/body text for this block number
-            title, body = get_block_intro_text(self.block_no)
+        # Get the title/body text for this block number
+        title, body = get_block_intro_text(self.block_no)
 
-            # Build a text stimulus to display instructions
-            msg = visual.TextStim(
-                self.win,
-                text=f"{title}\n\n{body}\n\nPress SPACE to start\n(ESC to quit)",
-                height=0.7,
-                color='white',
-                wrapWidth=20
-            )
+        # Build a text stimulus to display instructions
+        msg = visual.TextStim(
+            self.win,
+            text=f"{title}\n\n{body}\n\nPress SPACE to start\n(ESC to quit)",
+            height=0.7,
+            color='white',
+            wrapWidth=20
+        )
 
-            # Clear buffered keys before checking for new key presses
-            self.kb.clearEvents()
+        # Clear buffered keys before checking for new key presses
+        self.kb.clearEvents()
 
-            while True:
-                # Quit immediately if ESC is pressed
-                if self.kb.getKeys(keyList=['escape'], clear=True):
-                    self.win.close()
-                    core.quit()
-                    return
-                
-                # Draw the message and present it on screen
-                msg.draw()
-                self.win.flip()
+        while True:
+            # Quit immediately if ESC is pressed
+            if self.kb.getKeys(keyList=['escape'], clear=True):
+                self.win.close()
+                core.quit()
+                return
+            
+            # Draw the message and present it on screen
+            msg.draw()
+            self.win.flip()
 
-                # Start the block when SPACE or RETURN is pressed
-                if self.kb.getKeys(keyList=['space', 'return'], clear=True):
-                    break
+            # Start the block when SPACE or RETURN is pressed
+            if self.kb.getKeys(keyList=['space', 'return'], clear=True):
+                break
 
     # ------------------------ Show outro screen ------------------------
 
@@ -189,7 +123,7 @@ class Block:
 
     # Show a fixation cross for a fixed duration and store its timing
     def show_fixation(self, seconds=1.0):
-        txt = visual.TextStim(self.win, text='+', height=1.2, color='white')
+        txt = visual.TextStim(self.win, text='+', height=1.2, color=(0.9, 0.9, 0.9),colorSpace='rgb')
         clock = core.Clock()
         clock.reset()
         
@@ -279,9 +213,22 @@ class Block:
         threshold_estimates_history_log10 = []
         threshold_estimates_history_coh = []
 
-        # Collect labels for post-hoc bias diagnostics (exclude timeouts)
-        bias_y_true = []  # 1 = Right stimulus (direction==0), 0 = Left stimulus (direction==180)
-        bias_y_pred = []  # 1 = Right response, 0 = Left/other response
+        #  Post-hoc response bias tracking
+        #    Sensitivity (True Positive Rate): 
+        #       – True Positives / (True Positives + False Negatives)
+        #       - True Positive  (TP) = stimulus was Right AND response was Right
+        #       - False Negative (FN) = stimulus was Right BUT response was Left
+        #       Proportion of correct "Right" responses among Right stimuli.
+        #
+        #    Specificity (True Negative Rate):
+        #       - True Negatives / (True Negatives + False Positives)
+        #       - True Negative (TN) = stimulus was Left AND response was Left
+        #       - False Positive (FP) = stimulus was Left BUT response was Right
+        #       Proportion of correct "Left" responses among Left stimuli. 
+        tp = 0
+        fp = 0
+        fn = 0
+        tn = 0
 
         # ------------------------ Run adaptive trials and log results ------------------------
 
@@ -320,14 +267,22 @@ class Block:
             # Define the correct response key for this direction (0° = right, 180° = left).
             correct_key = 'right' if direction == 0 else 'left'
             
-            # Collect data for post-hoc bias diagnostics (exclude timeouts)
+            # Update TP, FN, TN, FP for specificity/sensitivity outcomes (exclude timeouts; include only left/right responses)
             if not result.get("timeout"):
-                true_label = 1 if direction == 0 else 0
                 resp = (result.get("response_key") or "").lower()
-                pred_label = 1 if resp == "right" else 0
-                bias_y_true.append(true_label)
-                bias_y_pred.append(pred_label)
-            
+                if resp in ("left", "right"):
+                    stim_is_right = (direction == 0)
+                    resp_is_right = (resp == "right")
+
+                    if stim_is_right and resp_is_right:
+                        tp += 1
+                    elif stim_is_right and (not resp_is_right):
+                        fn += 1
+                    elif (not stim_is_right) and (not resp_is_right):
+                        tn += 1
+                    else:
+                        fp += 1
+
             # Mark correctness for QUEST (treat timeout as incorrect).
             is_correct = 0 if result["timeout"] else int(result["response_key"] == correct_key)
 
@@ -401,9 +356,9 @@ class Block:
         intensities_log10 = [float(x) for x in quest.intensities] #log10 unit
         stimuli_coh = [float(10 ** x) for x in intensities_log10] #linear coherence unit
 
-        
-        # Compute summary diagnostics 
-        bias_metrics = compute_bias_metrics_right_positive(bias_y_true, bias_y_pred)
+        # Compute post-hoc sensitivity/specificity 
+        bias_sensitivity_right = tp / (tp + fn) if (tp + fn) > 0 else np.nan
+        bias_specificity_right = tn / (tn + fp) if (tn + fp) > 0 else np.nan
 
         diagnostics = {
             "quest_start_coh": float(start_coh),
@@ -436,11 +391,8 @@ class Block:
             "ci_5_95_log10": ci_log10,
             "overall_accuracy": float(np.mean(quest.data)),
             "last10_accuracy": float(np.mean(list(quest.data)[-10:])),
-            "bias_precision_right": bias_metrics["bias_precision_right"],
-            "bias_recall_right": bias_metrics["bias_recall_right"],
-            "bias_f1_right": bias_metrics["bias_f1_right"],
-            "p_right_stimulus": bias_metrics["p_right_stimulus"],
-            "p_right_response": bias_metrics["p_right_response"],
+            "bias_sensitivity_right": float(bias_sensitivity_right),
+            "bias_specificity_right": float(bias_specificity_right),
         }
 
         return diagnostics
