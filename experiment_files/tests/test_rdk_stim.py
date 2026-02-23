@@ -14,7 +14,7 @@ class DummyElementArrayStim:
     Minimal stand-in for psychopy.visual.ElementArrayStim.
     Stores the last positions passed to setXYs so we can assert shapes/finite values.
     """
-    def __init__(self, win, elementTex, fieldShape, elementMask, sizes, nElements, units, fieldSize):
+    def __init__(self, win, elementTex, fieldShape, elementMask, sizes, nElements, units, fieldSize, colors=None, colorSpace=None, **kwargs,):
         self.win = win
         self.elementTex = elementTex
         self.fieldShape = fieldShape
@@ -23,6 +23,8 @@ class DummyElementArrayStim:
         self.nElements = nElements
         self.units = units
         self.fieldSize = fieldSize
+        self.colors = colors
+        self.colorSpace = colorSpace
         self._xys = None
 
     def setXYs(self, xys):
@@ -113,7 +115,13 @@ def test_initialize_is_finite_and_in_circle(rdk, coherence):
 
 def test_initialize_resets_lifetimes_and_diagnostics(rdk):
     rdk.initialize_rdk_stim(direction=0, coherence=0.5)
-    assert np.all(rdk.dot_lifetimes == 0)
+
+    # Lifetimes are randomized on initialize (0 .. max_lifetime_frames-1)
+    assert rdk.dot_lifetimes.shape == (rdk.n_dots,)
+    assert np.issubdtype(rdk.dot_lifetimes.dtype, np.integer)
+    assert np.all((0 <= rdk.dot_lifetimes) & (rdk.dot_lifetimes < rdk.max_lifetime_frames))
+
+    # Diagnostics are reset on initialize
     assert rdk.n_outside_last == 0
     assert rdk.n_expired_last == 0
 

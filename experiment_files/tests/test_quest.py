@@ -5,8 +5,7 @@ Tests included:
 1) QUEST initialization sanity (matches Block.run_block params)
 2) QUEST intensity bounds
 3) QUEST convergence sanity (not strict)
-4) Block.run_block() with mocked Trial + mocked fixation (expects 64 trials, FAST)
-   + auto-detect QUEST mean() scale (linear vs log10) and apply correct bounds check
+4) Block.run_block() with mocked Trial + mocked fixation (expects 64 trials)
 """
 
 from __future__ import annotations
@@ -19,73 +18,28 @@ from unittest.mock import MagicMock
 from experiment_files.block import Block
 
 
+START_COH = 0.58
+MIN_COH = 0.02
+MAX_COH = 0.90
+
+START_LOG10 = float(np.log10(START_COH))
+MIN_LOG10 = float(np.log10(MIN_COH))
+MAX_LOG10 = float(np.log10(MAX_COH))
+
 QUEST_DEFAULTS = dict(
-    startVal=0.58,
-    startValSd=0.40,
+    startVal=START_LOG10,
+    startValSd=0.30,
     pThreshold=0.82,
     gamma=0.5,
     beta=3.5,
-    delta=0.01,
+    delta=0.02,
     nTrials=64,
-    minVal=0.02,
-    maxVal=0.9,
+    minVal=MIN_LOG10,
+    maxVal=MAX_LOG10,
+    grain=0.02,
     method="quantile",
 )
 
-
-# --------------------------
-# Scale helpers
-# --------------------------
-
-def infer_quest_output_scale(mean_val: float, min_val: float, max_val: float) -> str:
-    """
-    Infer whether QuestHandler.mean() is on:
-      - "linear": mean is already a coherence-like value in [minVal, maxVal]
-      - "log10": mean is log10(coherence), so 10**mean is in [minVal, maxVal]
-      - "ambiguous": can't decide robustly
-    """
-    # Negative values cannot be linear coherence; try log10 interpretation first.
-    if mean_val < 0:
-        coh = 10 ** mean_val
-        return "log10" if (min_val <= coh <= max_val) else "ambiguous"
-
-    in_linear = (min_val <= mean_val <= max_val)
-    coh_from_log10 = 10 ** mean_val
-    in_log10 = (min_val <= coh_from_log10 <= max_val)
-
-    if in_linear and not in_log10:
-        return "linear"
-    if in_log10 and not in_linear:
-        return "log10"
-    return "ambiguous"
-
-
-def assert_mean_within_bounds_under_inferred_scale(mean_val: float, min_val: float, max_val: float) -> str:
-    """
-    Assert that QUEST mean is within bounds under the inferred scale.
-    Returns the inferred scale ("linear" or "log10") for optional debugging.
-    """
-    scale = infer_quest_output_scale(mean_val, min_val, max_val)
-
-    if scale == "linear":
-        assert min_val <= mean_val <= max_val, (
-            f"QUEST mean() expected linear within [{min_val}, {max_val}], got {mean_val}"
-        )
-        return scale
-
-    if scale == "log10":
-        coh = 10 ** mean_val
-        assert min_val <= coh <= max_val, (
-            f"QUEST mean() appears log10; 10**mean={coh} not within [{min_val}, {max_val}] "
-            f"(mean={mean_val})"
-        )
-        return scale
-
-    coh = 10 ** mean_val
-    raise AssertionError(
-        "Could not infer QUEST mean() scale robustly. "
-        f"mean={mean_val}, 10**mean={coh}, bounds=[{min_val},{max_val}]"
-    )
 
 
 # ==========================================================
@@ -120,18 +74,21 @@ def test_quest_intensity_bounds():
 # ==========================================================
 
 def test_quest_convergence_sanity():
-    true_threshold = 0.40
+    """
+    Very loose sanity check:
+    - QUEST intensities are log10(coh)
+    - quest.mean() returns log10(coh)
+    """
+    true_threshold_log10 = float(np.log10(0.40))
     quest = data.QuestHandler(**QUEST_DEFAULTS)
 
     for intensity in quest:
-        resp = 1 if float(intensity) >= true_threshold else 0
+        resp = 1 if float(intensity) >= true_threshold_log10 else 0
         quest.addResponse(resp)
 
-    est = float(quest.mean())
-    assert np.isfinite(est)
-    # Don't assume scale here; just confirm it's interpretable
-    assert infer_quest_output_scale(est, QUEST_DEFAULTS["minVal"], QUEST_DEFAULTS["maxVal"]) in ("linear", "log10")
-
+    est_log10 = float(quest.mean())
+    assert np.isfinite(est_log10)
+    assert MIN_LOG10 <= est_log10 <= MAX_LOG10
 
 # ==========================================================
 # 4) Full Block.run_block test using mocks (expects 64 trials, FAST)
@@ -190,7 +147,9 @@ def test_block_run_block_with_mock_trial_64_trials(tmp_path, monkeypatch):
     results_header = [
         "timestamp","subject_id",
         "block_no","trial_no","condition",
-        "direction","coherence",
+        "direction","coherence","intensity_log10",
+        "threshold_estimate_log10",
+        "threshold_estimate_coh",
         "response_key","correct_key","is_correct",
         "reaction_time","timeout",
         "global_onset_time","response_flip_time","response_frame_idx",
@@ -227,22 +186,19 @@ def test_block_run_block_with_mock_trial_64_trials(tmp_path, monkeypatch):
     # 64 trials
     assert len(diagnostics["responses"]) == 64
     assert len(diagnostics["stimuli_used"]) == 64
+    assert len(diagnostics["stimuli_used_log10"]) == 64
     assert len(diagnostics["threshold_estimates"]) == 64
+    assert len(diagnostics["threshold_estimates_log10"]) == 64
     assert diagnostics["overall_accuracy"] == 1.0
     assert set(diagnostics["responses"]).issubset({0, 1})
 
-    # Intensities (stimuli) always within bounds (these are what QUEST actually served)
-    assert all(
-        QUEST_DEFAULTS["minVal"] <= float(x) <= QUEST_DEFAULTS["maxVal"]
-        for x in diagnostics["stimuli_used"]
-    )
+    # QUEST served intensities in log10 space within bounds
+    assert all(MIN_LOG10 <= float(x) <= MAX_LOG10 for x in diagnostics["stimuli_used_log10"])
 
-    # Mean: detect scale and validate bounds under that scale
-    mean_val = float(diagnostics["mean"])
-    assert np.isfinite(mean_val)
-    scale = assert_mean_within_bounds_under_inferred_scale(
-        mean_val, QUEST_DEFAULTS["minVal"], QUEST_DEFAULTS["maxVal"]
-    )
+    # Coherence values (converted from those intensities) within linear bounds
+    assert all(MIN_COH <= float(c) <= MAX_COH for c in diagnostics["stimuli_used"])
 
-    # Only visible if you run pytest with -s
-    print(f"\n[QUEST] mean={mean_val:.6f} inferred_scale={scale} (10**mean={10**mean_val:.6f})")
+    # Final estimates exist and are bounded in their respective spaces
+    assert MIN_LOG10 <= float(diagnostics["mean_log10"]) <= MAX_LOG10
+    assert MIN_COH <= float(diagnostics["mean_coh"]) <= MAX_COH
+ 

@@ -322,6 +322,7 @@ def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mo
     exp = exp_mod.Experiment()
 
     exp.subject_id = "S01"
+    exp.run_id = "20250101_000000_abcd"
     exp.measured_rate = 120.0
     exp.dot_speed = 5.0
     exp.dot_density = 0.55
@@ -333,7 +334,7 @@ def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mo
 
     exp.initialize_stimulus_and_load_trials()
 
-    base = f"RDK|{exp.subject_id}".encode("utf-8")
+    base = f"RDK|{exp.subject_id}|{exp.run_id}".encode("utf-8")
     digest = hashlib.sha256(base).hexdigest()
     expected_seed = int(digest[:8], 16)
 
@@ -348,6 +349,7 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     exp = exp_mod.Experiment()
 
     exp.subject_id = "S01"
+    exp.run_id = "20250101_000000_abcd"
     exp.results_csv_path = str(tmp_path / "S01_20250101_000000.csv")
 
     # geometry fields
@@ -379,6 +381,7 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     assert "DISPLAY TIMING CHECK" in txt
     assert "RDK STIMULUS" in txt
     assert "ENVIRONMENT" in txt
+    assert "Run ID:" in txt 
     assert "Measured refresh rate used (Hz):" in txt
     assert "PsychoPy version:" in txt
     assert "Screen width (cm):" in txt
@@ -391,6 +394,6 @@ def test_plot_diagnostics_saves_png(tmp_path, exp_mod):
 
     exp_mod.plot_diagnostics(diagnostics, base)
 
-    out = base + "_thresholds.png"
+    out = base + "_quest_diagnostics.png"
     assert os.path.exists(out)
     assert os.path.getsize(out) > 0
