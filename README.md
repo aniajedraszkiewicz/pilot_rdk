@@ -38,9 +38,39 @@ Automated tests verifying correctness, stability, and reproducibility.
 
 ## Running the experiment
 
-From the repository root:
+The repository provides two launcher scripts that run the same experiment implementation with different keyboard backends.
+
+The code was developed using the **VS Code editor** with a manually created **Python virtual environment**. On macOS, only the **ioHub** keyboard backend worked reliably in this setup. The **PTB (Psychtoolbox)** backend, which is the default used by PsychoPy, requires additional dependencies from the MATLAB Psychtoolbox that were not accessible in this environment during development (January 2026).
+
+Therefore, the experiment can be launched using two different approaches:
+
+### Running from VS Code / Python environment (ioHub backend)
+
+From the project root:
 
 ```bash
-python -m experiment_files.experiment
+python run_experiment_iohub.py
+```
 
+### Running from PsychoPy Standalone (PTB backend)
 
+If **PsychoPy Standalone** is installed, open `run_experiment_ptb.py` in **PsychoPy Coder** and run the script. 
+In this case, the PTB keyboard backend will be used.
+
+---
+## Instruction language
+
+Participant instructions are defined in:
+
+`experiment_files/helpers.py`
+
+Two language versions are currently implemented:
+
+- `en` – English  
+- `pl` – Polish  
+
+The language used during the experiment is specified when initializing the `Block` class (in `block.py`):
+
+```python
+Block(..., lang="pl")
+```
