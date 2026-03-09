@@ -29,7 +29,7 @@ class Block:
 
     # ------------------------ Store block configuration ------------------------
     
-    def __init__(self, win, kb, rdk, block_no, subject_id, results_csv_path, results_header, max_stim_sec, debug=True):
+    def __init__(self, win, kb, rdk, block_no, subject_id, results_csv_path, results_header, max_stim_sec, debug=True, lang="pl"):
         
         # Store core PsychoPy objects shared by this block
         self.win = win
@@ -38,6 +38,8 @@ class Block:
 
         # Store debug flag
         self.debug = bool(debug)
+
+        self.lang= lang 
         
         # Store block identifiers
         self.block_no = block_no
@@ -65,12 +67,17 @@ class Block:
     # Display the block intro screen (press SPACE to start, ESC to quit) 
     def show_intro(self):
         # Get the title/body text for this block number
-        title, body = get_block_intro_text(self.block_no)
+        title, body = get_block_intro_text(self.block_no, lang=self.lang)
+
+        if self.lang == "pl":
+            footer = "Naciśnij SPACJĘ, aby rozpocząć\n(ESC aby wyjść)"
+        else:
+            footer = "Press SPACE to start\n(ESC to quit)"
 
         # Build a text stimulus to display instructions
         msg = visual.TextStim(
             self.win,
-            text=f"{title}\n\n{body}\n\nPress SPACE to start\n(ESC to quit)",
+            text=f"{title}\n\n{body}\n\n{footer}",
             height=0.7,
             color='white',
             wrapWidth=20
@@ -99,11 +106,16 @@ class Block:
     def show_outro(self):
         """Display the block outro screen"""
         
-        title, body = get_block_outro_text(self.block_no)
+        title, body = get_block_outro_text(self.block_no, lang=self.lang)
+
+        if self.lang == "pl":
+            footer = "Naciśnij SPACJĘ, aby kontynuować"
+        else:
+            footer = "Press SPACE to continue"
 
         msg = visual.TextStim(
             self.win,
-            text=f"{title}\n\n{body}\n\nPress SPACE to continue",
+            text=f"{title}\n\n{body}\n\n{footer}",
             height=0.9,
             color="white",
             wrapWidth=20,
@@ -193,8 +205,7 @@ class Block:
         quest = data.QuestHandler(
             startVal=start_intensity_log10,             # prior mean: initial threshold guess (log10 coherence)
             startValSd=start_intensity_sd_log10,        # prior SD in log10: uncertainty about the initial guess
-            pThreshold=0.75,                            # target performance level (82% correct - which is equivalent 
-                                                        # to a 3 up 1 down standard staircase; PsychoPy QuestHandler documentation)
+            pThreshold=0.75,                            # target performance level (75% correct, PsychoPy QuestHandler documentation)
             gamma=0.5,                                  # 2AFC guessing rate (left/right → chance = 50%)
             beta=3.5,                                   # Weibull slope (steepness of the psychometric curve)
             delta=0.02,                                 # lapse rate (~2% random mistakes)
