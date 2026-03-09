@@ -17,7 +17,7 @@ class Trial:
     I. Keypress event timing:
         
         reaction_time - primary RT (s). Time from the first stimulus flip (stimulus onset) to the keypress,
-        measured by the iohub Keyboard clock (k.rt). The keyboard clock is reset on the
+        measured by the ptb or iohub Keyboard clock (k.rt). The keyboard clock is reset on the
         first flip via win.callOnFlip, so this RT is stimulus-locked.
 
     II. Display flip timing (when the stimulus frame actually appeared/when a frame was refreshed):
@@ -56,9 +56,9 @@ class Trial:
         # Block passes it into Trial: Trial(..., debug=self.debug)
         self.debug = bool(debug)
 
-        # Safety: require an iohub Keyboard (or at least a Keyboard with a resettable clock).
+        # Safety: require at least a Keyboard with a resettable clock.
         if not (hasattr(self.kb, "clock") and hasattr(self.kb.clock, "reset")):
-            raise TypeError("kb must be psychopy.hardware.keyboard.Keyboard (iohub)")
+            raise TypeError("kb must be psychopy.hardware.keyboard.Keyboard with a resettable clock")
     
     def run_single_trial(self, direction, coherence):
         

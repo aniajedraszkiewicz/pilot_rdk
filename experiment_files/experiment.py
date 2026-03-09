@@ -5,8 +5,21 @@
 # backends must be set BEFORE importing psychopy.
 
 import os, sys, re
-os.environ["PSYCHOPY_USE_IOHUB"] = "True"   # use ioHub (reliable keyboard + timing)
-os.environ["PSYCHOPY_NO_PTBOXLIB"] = "1"    # avoid PTB if it causes issues on your setup
+
+# Preferred keyboard backend is passed in from the launcher file.
+# "ptb" for PsychoPy Standalone
+# "iohub" for running in editors like VS Code with a manually created virtual environment (venv)
+PREFERRED_KEYBOARD_BACKEND = os.environ.get("RDK_KEYBOARD_BACKEND", "iohub")
+
+if PREFERRED_KEYBOARD_BACKEND == "iohub":
+    os.environ["PSYCHOPY_USE_IOHUB"] = "True"
+    os.environ["PSYCHOPY_NO_PTBOXLIB"] = "1"
+elif PREFERRED_KEYBOARD_BACKEND == "ptb":
+    os.environ["PSYCHOPY_USE_IOHUB"] = "False"
+    os.environ["PSYCHOPY_NO_PTBOXLIB"] = "0"
+else:
+    raise ValueError(f"Unsupported keyboard backend preference: {PREFERRED_KEYBOARD_BACKEND}")
+
 
 # Make relative paths (e.g., results/) stable by running from this script's folder
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -30,8 +43,8 @@ prefs.general['winType'] = 'pyglet'
 # Request synchronization to vertical blank (improving timing stability)
 prefs.general['waitBlanking'] = True
 
-# Ensure keyboard uses ioHub (needed for kb.clock)
-prefs.hardware['keyboard'] = 'iohub'
+# Choose preferred keyboard backend
+prefs.hardware['keyboard'] = PREFERRED_KEYBOARD_BACKEND
 
 # Import experiment components
 from .block import Block
@@ -107,6 +120,7 @@ class Experiment:
     
     # Define the fields shown in the startup GUI dialog 
     def __init__(self):
+        self.keyboard_backend_preferred = PREFERRED_KEYBOARD_BACKEND
         self.expInfo = {
         "participant": "",
         "screen_width_cm": "53.0",
@@ -293,15 +307,17 @@ class Experiment:
         return float(refresh_rate_hz)
 
 
-    # Initialize ioHub keyboard and the RDK stimulus (including subject-specific RNG seed)
+    # Initialize keyboard backend and the RDK stimulus (including subject-specific RNG seed)
     # RDK RNG: deterministic seed from subject_id → controls dot randomness (signal/noise) for this participant.
     # Block RNG (direction): seeded inside Block.__init__() and logged later in run_experiment().
     def initialize_stimulus_and_load_trials(self):
 
-        # Use ioHub for keyboard input (stable, stimulus-locked RTs); event-based polling can add extra latency.
-        # Psychtoolbox/PTB keyboard backend is unavailable on this Mac setup, so ioHub is the reliable option here.
-        self.kb = keyboard.Keyboard(backend='iohub')
+        # Initialize keyboard backend
+        self.kb = keyboard.Keyboard(backend=self.keyboard_backend_preferred)
+        self.keyboard_backend_used = self.keyboard_backend_preferred
         self.kb.clearEvents()
+
+        print(f"[INFO] Keyboard backend: {self.keyboard_backend_used}")
     
         # Create subject-specific RNG for the RDK dot stream 
         base = f"RDK|{self.subject_id}|{self.run_id}".encode("utf-8")
@@ -374,7 +390,8 @@ class Experiment:
             f.write(self._section("ENVIRONMENT"))
             f.write(self._line("PsychoPy version:", psychopy.__version__))
             f.write(self._line("Window backend:", prefs.general["winType"]))
-            f.write(self._line("Keyboard backend:", prefs.hardware["keyboard"]))
+            f.write(self._line("Keyboard backend preferred:", prefs.hardware["keyboard"]))
+            f.write(self._line("Keyboard backend used:", self.keyboard_backend_used))
             f.write(self._line("Screen width (cm):", self.screen_width_cm))
             f.write(self._line("Viewing distance (cm):", self.viewing_distance_cm))
             w, h = self.actual_win_size_px
