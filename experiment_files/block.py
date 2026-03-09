@@ -209,7 +209,7 @@ class Block:
             gamma=0.5,                                  # 2AFC guessing rate (left/right → chance = 50%)
             beta=3.5,                                   # Weibull slope (steepness of the psychometric curve)
             delta=0.02,                                 # lapse rate (~2% random mistakes)
-            nTrials=3,                                 # number of adaptive trials (set to 64)
+            nTrials=64,                                 # number of adaptive trials (set to 64)
             minVal=min_intensity_log10,                 # lower bound for log10 coherence (avoid 0 signal)
             maxVal=max_intensity_log10,                 # upper bound for log10 coherence
             grain=0.02,                                 # step size in intensity units (log10)
