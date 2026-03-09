@@ -125,7 +125,7 @@ class FakeKeyboard:
     def clearEvents(self):
         self._cleared = True
 
-    # Not needed by current experiment.py tests, but harmless if present later:
+    # Not needed by current experiment.py tests, but harmless if present later
     def getKeys(self, *args, **kwargs):
         return []
 
@@ -169,31 +169,46 @@ class FakeBlock:
         return {
             "threshold_estimates": [0.2, 0.18, 0.17],
             "overall_accuracy": 0.75,
-            "quest_first_intensity": 0.2,
-            "quest_intensity_min": 0.05,
-            "quest_intensity_max": 0.5,
-            "mean": 0.17,
-            "sd": 0.02,
-            "mode": 0.17,
-            "ci_5_95": (0.10, 0.25),
+            "quest_start_coh": 0.20,
+            "quest_min_coh": 0.05,
+            "quest_max_coh": 0.50,
+            "quest_start_intensity_log10": -0.70,
+            "quest_start_intensity_sd_log10": 0.30,
+            "quest_pThreshold": 0.75,
+            "quest_gamma": 0.5,
+            "quest_beta": 3.5,
+            "quest_delta": 0.02,
+            "quest_nTrials": 64,
+            "quest_method": "quantile",
+            "coh_min_used": 0.05,
+            "coh_max_used": 0.50,
+            "mean_coh": 0.17,
+            "ci_5_95_coh": (0.10, 0.25),
+            "ci_5_95_log10": (-1.0, -0.6),
             "last10_accuracy": 0.8,
+            "bias_sensitivity_right": 0.75,
+            "bias_specificity_right": 0.80,
         }
 
 
 # =========================
-# Fixture: safe import
+# Fixture factory: safe import
 # =========================
 
-@pytest.fixture()
-def exp_mod(monkeypatch):
+def _import_experiment_module(monkeypatch, backend: str):
     """
     Import experiment_files.experiment safely by stubbing:
     - psychopy and its submodules
     - experiment_files.block and experiment_files.rdk_stim
     - os.chdir at import-time
+
+    The keyboard backend is selected via RDK_KEYBOARD_BACKEND.
     """
     # Prevent import-time os.chdir(...) from changing pytest cwd
     monkeypatch.setattr(os, "chdir", lambda *_a, **_k: None)
+
+    # Select backend for this import
+    monkeypatch.setenv("RDK_KEYBOARD_BACKEND", backend)
 
     # Ensure project root is importable so "experiment_files" can be found
     project_root = str(Path(__file__).resolve().parents[1])
@@ -222,7 +237,10 @@ def exp_mod(monkeypatch):
     monitors = SimpleNamespace(Monitor=lambda name: FakeMonitor(name))
     psychopy.monitors = monitors
 
-    visual = SimpleNamespace(Window=FakeWindow, TextStim=lambda *a, **k: SimpleNamespace(draw=lambda: None))
+    visual = SimpleNamespace(
+        Window=FakeWindow,
+        TextStim=lambda *a, **k: SimpleNamespace(draw=lambda: None),
+    )
     psychopy.visual = visual
 
     data = SimpleNamespace()
@@ -261,17 +279,31 @@ def exp_mod(monkeypatch):
     return mod
 
 
+@pytest.fixture(params=["iohub", "ptb"])
+def exp_mod(request, monkeypatch):
+    """Parametrized experiment module fixture for both keyboard backends."""
+    return _import_experiment_module(monkeypatch, request.param)
+
+
 # =========================
 # Tests
 # =========================
 
 def test_import_sets_expected_prefs_and_env(exp_mod):
-    assert os.environ.get("PSYCHOPY_USE_IOHUB") == "True"
-    assert os.environ.get("PSYCHOPY_NO_PTBOXLIB") == "1"
+    backend = exp_mod.PREFERRED_KEYBOARD_BACKEND
+
+    if backend == "iohub":
+        assert os.environ.get("PSYCHOPY_USE_IOHUB") == "True"
+        assert os.environ.get("PSYCHOPY_NO_PTBOXLIB") == "1"
+    elif backend == "ptb":
+        assert os.environ.get("PSYCHOPY_USE_IOHUB") == "False"
+        assert os.environ.get("PSYCHOPY_NO_PTBOXLIB") == "0"
+    else:
+        pytest.fail(f"Unexpected backend: {backend}")
 
     assert exp_mod.prefs.general.get("winType") == "pyglet"
     assert exp_mod.prefs.general.get("waitBlanking") is True
-    assert exp_mod.prefs.hardware.get("keyboard") == "iohub"
+    assert exp_mod.prefs.hardware.get("keyboard") == backend
 
 
 def test_create_window_and_monitor_sets_window_fields(exp_mod):
@@ -330,7 +362,11 @@ def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mo
     exp.win = FakeWindow()
 
     called = {"n": 0}
-    monkeypatch.setattr(exp, "write_summary", lambda: called.__setitem__("n", called["n"] + 1), raising=True)
+    monkeypatch.setattr(
+        exp, "write_summary",
+        lambda: called.__setitem__("n", called["n"] + 1),
+        raising=True
+    )
 
     exp.initialize_stimulus_and_load_trials()
 
@@ -338,7 +374,8 @@ def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mo
     digest = hashlib.sha256(base).hexdigest()
     expected_seed = int(digest[:8], 16)
 
-    assert exp.kb.backend == "iohub"
+    assert exp.kb.backend == exp.keyboard_backend_preferred
+    assert exp.keyboard_backend_used == exp.keyboard_backend_preferred
     assert exp.kb._cleared is True
     assert exp.rdk_seed == expected_seed
     assert exp.rdk.frame_rate == 120.0
@@ -367,25 +404,34 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     exp.refresh_rate_method = "getActualFrameRate"
     exp.dot_speed = 5.0
     exp.dot_density = 0.55
+    exp.keyboard_backend_used = exp.keyboard_backend_preferred
 
-    exp.rdk = FakeRDK(FakeWindow(), exp.measured_rate, exp.dot_speed, exp.dot_density, np.random.default_rng(0))
+    exp.rdk = FakeRDK(
+        FakeWindow(),
+        exp.measured_rate,
+        exp.dot_speed,
+        exp.dot_density,
+        np.random.default_rng(0),
+    )
 
     exp.write_summary()
 
     summary_path = exp.results_csv_path.replace(".csv", "_summary.txt")
     assert os.path.exists(summary_path)
 
-    txt = open(summary_path, "r", encoding="utf-8").read()
+    txt = Path(summary_path).read_text(encoding="utf-8")
     assert "RUN SUMMARY" in txt
     assert "DISPLAY TIMING" in txt
     assert "DISPLAY TIMING CHECK" in txt
     assert "RDK STIMULUS" in txt
     assert "ENVIRONMENT" in txt
-    assert "Run ID:" in txt 
+    assert "Run ID:" in txt
     assert "Measured refresh rate used (Hz):" in txt
     assert "PsychoPy version:" in txt
     assert "Screen width (cm):" in txt
     assert "Viewing distance (cm):" in txt
+    assert "Keyboard backend preferred:" in txt
+    assert "Keyboard backend used:" in txt
 
 
 def test_plot_diagnostics_saves_png(tmp_path, exp_mod):

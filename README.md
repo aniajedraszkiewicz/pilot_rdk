@@ -74,3 +74,37 @@ The language used during the experiment is specified when initializing the `Bloc
 ```python
 Block(..., lang="pl")
 ```
+
+---
+## Running unit tests
+
+Automated tests are implemented using **pytest**.  
+They verify the correctness and reproducibility of the experiment logic without opening real PsychoPy windows.
+
+The tests use **mocked components** (fake windows, keyboards, and stimuli) so they can run safely and quickly in a headless environment.
+
+### Activate the virtual environment
+
+Before running tests, activate the Python virtual environment used for development:
+
+```bash
+source venv/bin/activate
+```
+
+### Run all tests 
+
+From the **project root** directory:
+
+```bash
+python -m pytest -v
+```
+Running tests from the project root ensures that the experiment_files package can be imported correctly.
+
+### Run tests for a specific module
+
+Example:
+
+```bash
+python -m pytest experiment_files/tests/test_quest.py -v
+```
+
