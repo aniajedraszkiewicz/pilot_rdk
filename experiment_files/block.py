@@ -193,7 +193,7 @@ class Block:
         quest = data.QuestHandler(
             startVal=start_intensity_log10,             # prior mean: initial threshold guess (log10 coherence)
             startValSd=start_intensity_sd_log10,        # prior SD in log10: uncertainty about the initial guess
-            pThreshold=0.82,                            # target performance level (82% correct - which is equivalent 
+            pThreshold=0.75,                            # target performance level (82% correct - which is equivalent 
                                                         # to a 3 up 1 down standard staircase; PsychoPy QuestHandler documentation)
             gamma=0.5,                                  # 2AFC guessing rate (left/right → chance = 50%)
             beta=3.5,                                   # Weibull slope (steepness of the psychometric curve)
