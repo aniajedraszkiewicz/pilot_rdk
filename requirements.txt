@@ -1,5 +1,13 @@
 # ============================================
-# RDK Experiment — Dependencies
+# RDK Experiment — Python dependencies
+#
+# This file is intended for a manually created
+# Python virtual environment (e.g., VS Code + venv).
+#
+# It is NOT required when running the experiment
+# with PsychoPy Standalone, which provides its
+# own bundled Python environment and dependencies.
+#
 # Tested with Python 3.10.17
 # PsychoPy 2025.2.1 requires Python <3.12
 # ============================================
