@@ -34,9 +34,16 @@ def get_block_intro_text(block_no, lang="en"):
                 1: (
                     "In a moment, you will see dots moving on the screen.\n\n"
                     "The dots will move continuously and their movement may change over time.\n\n"
-                    "Your task is to press a key as soon as you think you know the answer: whether most of the dots are moving to the left or to the right.\n\n"
+                    "Your task is to press a key as soon as you think you know the answer: "
+                    "whether most of the dots are moving to the left or to the right.\n\n"
                     "Press the LEFT arrow key if most dots move left.\n"
                     "Press the RIGHT arrow key if most dots move right.\n\n"
+                    "The task has two parts.\n"
+                    "In the first part, you will receive feedback after each response "
+                    "telling you whether your answer was correct or incorrect.\n"
+                    "In the second part, no feedback will be given.\n\n"
+                    "The difficulty of the task will vary — sometimes it will be easier, "
+                    "sometimes harder. This is normal and expected.\n\n"
                     "After each response, a small cross will appear on the screen. "
                     "Please look at the cross and keep your eyes on it until the next trial starts."
                     ),
@@ -56,12 +63,19 @@ def get_block_intro_text(block_no, lang="en"):
                 1: (
                     "Za chwilę zobaczysz na ekranie poruszające się kropki.\n\n"
                     "Kropki będą stale w ruchu, a kierunek ich ruchu może się zmieniać.\n\n"
-                    "Twoim zadaniem jest nacisnąć odpowiedni klawisz na klawiaturze tak szybko, jak tylko podejmiesz decyzję: czy większość kropek porusza się w lewo, czy w prawo.\n\n"
-                    "Naciśnij lewą strzałkę, jeśli uważasz, że większość kropek porusza się w lewo. \n"
+                    "Twoim zadaniem jest nacisnąć odpowiedni klawisz na klawiaturze tak szybko, "
+                    "jak tylko podejmiesz decyzję: czy większość kropek porusza się w lewo, czy w prawo.\n\n"
+                    "Naciśnij lewą strzałkę, jeśli uważasz, że większość kropek porusza się w lewo.\n"
                     "Naciśnij prawą strzałkę, jeśli uważasz, że większość kropek porusza się w prawo.\n\n"
+                    "Zadanie składa się z dwóch części.\n"
+                    "W pierwszej części po każdej odpowiedzi otrzymasz informację zwrotną, "
+                    "czy Twoja odpowiedź była poprawna, czy niepoprawna.\n"
+                    "W drugiej części informacja zwrotna nie będzie wyświetlana.\n\n"
+                    "Trudność zadania będzie się zmieniać — czasem będzie łatwiej, "
+                    "czasem trudniej. Jest to naturalne i zamierzone.\n\n"
                     "Po każdej odpowiedzi na ekranie pojawi się mały biały krzyżyk. "
                     "Patrz na krzyżyk do momentu ponownego pojawienia się kropek."
-                    ),
+                ),
                 2: "Główne zadanie.",
                 3: "Główne zadanie.",
             },

@@ -123,7 +123,7 @@ class Experiment:
         self.keyboard_backend_preferred = PREFERRED_KEYBOARD_BACKEND
         self.expInfo = {
         "participant": "",
-        "screen_width_cm": "53.0",
+        "screen_width_cm": "47.2",
         "viewing_distance_cm": "57.0",
         "fullscr": [True, False],}
 
@@ -456,6 +456,28 @@ class Experiment:
 
         # Show instructions before starting trials
         block.show_intro()  
+
+        # Run practice phase before QUEST begins
+        practice_result = block.run_practice_block(
+            practice_coherence=0.7,
+            window_size=20,
+            accuracy_criterion=0.75,
+            max_trials=120,
+        )
+        print(f"Practice ended after {practice_result['n_trials']} trials. "
+            f"Passed: {practice_result['passed']}. "
+            f"Final accuracy: {practice_result['final_accuracy']:.2f}")
+
+        if not practice_result["passed"]:
+            print("[WARNING] Participant did not meet practice criterion. Consider repeating.")
+
+        with open(summary_path, "a", encoding="utf-8") as f:
+            f.write(self._section("PRACTICE RESULTS"))
+            f.write(self._line("Trials completed:", practice_result["n_trials"]))
+            f.write(self._line("Criterion met:", practice_result["passed"]))
+            f.write(self._line("Final accuracy:", round(practice_result["final_accuracy"], 3)))
+
+        block.show_practice_break()
     
         # Run adaptive QUEST block (trial loop + CSV logging happen inside Block.run_block())
         diagnostics = block.run_block()

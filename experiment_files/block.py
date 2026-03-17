@@ -21,7 +21,7 @@ class Block:
         - returns basic QUEST diagnostics at the end of the block.
     
     QUEST (Guénot et al., 2023): Bayesian adaptive method that chooses coherence each trial to estimate
-    the coherence threshold corresponding to a target performance level of approximately 82% correct.
+    the coherence threshold corresponding to a target performance level of approximately 75% correct.
     It starts from a prior (initial guess + uncertainty) and updates the posterior threshold estimate after each response.
     Similar to a staircase (harder after correct, easier after incorrect), but QUEST uses all past responses
     via the posterior mean estimate instead of a fixed up/down rule.
@@ -52,7 +52,7 @@ class Block:
         # Store per-trial time limit (seconds)
         self.max_stim_sec = max_stim_sec
        
-    # ------------------------ Seed block-level RNG ------------------------
+        # ------------------------ Seed block-level RNG ------------------------
 
         # Seed a local RNG for block-level design choices (e.g., direction), separate from the dot RNG.
         seed_str = f"{subject_id}_BLOCK_{block_no}".encode("utf-8") # build seed text
@@ -61,6 +61,11 @@ class Block:
         self.block_seed = seed                                      # store for logging
         self.rng = np.random.default_rng(seed)                      # make block RNG
 
+        # Pre-create fixation stimulus once to avoid repeated object
+        # creation across trials (reduces memory buildup and timing jitter)
+        self.fixation_stim = visual.TextStim(
+            self.win, text='+', height=1.2,
+            color=(0.9, 0.9, 0.9), colorSpace='rgb')
     
     # ------------------------ Show intro screen ------------------------
 
@@ -80,7 +85,7 @@ class Block:
             text=f"{title}\n\n{body}\n\n{footer}",
             height=0.7,
             color='white',
-            wrapWidth=20
+            wrapWidth=26
         )
 
         # Clear buffered keys before checking for new key presses
@@ -135,7 +140,7 @@ class Block:
 
     # Show a fixation cross for a fixed duration and store its timing
     def show_fixation(self, seconds=1.0):
-        txt = visual.TextStim(self.win, text='+', height=1.2, color=(0.9, 0.9, 0.9),colorSpace='rgb')
+        txt = self.fixation_stim
         clock = core.Clock()
         clock.reset()
         
@@ -171,6 +176,157 @@ class Block:
             "fix_target_sec": float(seconds), # requested duration (target)
         }
     
+
+    # ------------------------ Practice block with feedback ------------------------
+
+    # Run a practice block with trial-by-trial feedback and an accuracy criterion. Each trial uses a fixed coherence level. 
+    # After every trial, the participant sees brief feedback ("Correct" / "Incorrect"). Practice ends when either:
+    #   (a) accuracy over the last `window_size` trials >= `accuracy_criterion`, OR
+    #   (b) `max_trials` trials have been completed.
+
+    def run_practice_block(
+        self,
+        practice_coherence=0.7,   # fixed coherence used throughout practice
+        window_size=20,            # how many recent trials to evaluate
+        accuracy_criterion=0.75,  # proportion correct needed to pass
+        max_trials=120,            # hard ceiling: stop even if criterion not met
+    ):
+        # Reuse the same Trial runner as the main block
+        trial_runner = Trial(
+            self.win, self.kb, self.rdk,
+            self.max_stim_sec, debug=self.debug
+        )
+        # Prepare feedback stimuli once (not inside the loop — saves time)
+        if self.lang == "pl":
+            correct_text  = "Poprawnie ✓"
+            incorrect_text = "Niepoprawnie ✗"
+        else:
+            correct_text  = "Correct ✓"
+            incorrect_text = "Incorrect ✗"
+
+        feedback_correct = visual.TextStim(self.win, text=correct_text, height=1.0, color="lime")
+
+        feedback_incorrect = visual.TextStim(self.win, text=incorrect_text,height=1.0, color="red")
+
+        results = []   # stores 1 (correct) or 0 (incorrect) for each trial
+
+        for trial_index in range(max_trials):
+
+            # Fixation 
+            self.last_fix = None
+            self.show_fixation(seconds=1.0)
+            if self.last_fix is None:
+                break                      # ESC was pressed during fixation
+
+            self.kb.clearEvents()
+
+            # Random direction 
+            direction = 0 if self.rng.random() < 0.5 else 180
+
+            # Run trial 
+            result = trial_runner.run_single_trial(direction, practice_coherence)
+            if result is None:
+                break                      # ESC was pressed during trial
+
+            # Score response 
+            correct_key = "right" if direction == 0 else "left"
+            is_correct = 0 if result["timeout"] else int(
+                result["response_key"] == correct_key
+            )
+            results.append(is_correct)
+
+            # Log to CSV (same format as main block) 
+            fix = self.last_fix or {}
+            row = {
+                "timestamp":                  datetime.now().isoformat(timespec="seconds"),
+                "subject_id":                 self.subject_id,
+                "block_no":                   self.block_no,
+                "trial_no":                   trial_index + 1,
+                "condition":                  "practice",
+                "direction":                  direction,
+                "coherence":                  float(practice_coherence),
+                "intensity_log10":            float(np.log10(practice_coherence)),
+                "threshold_estimate_log10":   None,
+                "threshold_estimate_coh":     None,
+                "response_key":               result.get("response_key"),
+                "correct_key":                correct_key,
+                "is_correct":                 is_correct,
+                "reaction_time":              result.get("reaction_time"),
+                "timeout":                    result.get("timeout"),
+                "global_onset_time":          result.get("global_onset_time"),
+                "response_flip_time":         result.get("response_flip_time"),
+                "response_frame_idx":         result.get("response_frame_idx"),
+                "response_detected_time":     result.get("response_detected_time"),
+                "stimulus_on_screen_duration":result.get("stimulus_on_screen_duration"),
+                "frame_count":                result.get("frame_count"),
+                "estimated_fps":              result.get("estimated_fps"),
+                "n_long_frames":              result.get("n_long_frames"),
+                "max_flip_interval":          result.get("max_flip_interval"),
+                "fix_onset_time":             fix.get("fix_onset_time"),
+                "fix_offset_time":            fix.get("fix_offset_time"),
+                "fix_duration":               fix.get("fix_duration"),
+                "fix_target_sec":             fix.get("fix_target_sec"),
+            }
+            self.append_log_row(self.results_csv_path, row, self.results_header)
+
+            # Show feedback for 500ms 
+            fb = feedback_correct if is_correct else feedback_incorrect
+            feedback_end = core.Clock()
+            while feedback_end.getTime() < 0.5:
+                fb.draw()
+                self.win.flip()
+
+            # Check rolling criterion (only once we have enough trials)
+            if len(results) >= window_size:
+                window_accuracy = float(np.mean(results[-window_size:]))
+                if window_accuracy >= accuracy_criterion:
+                    # Criterion met — blank screen briefly then exit
+                    self.win.flip()
+                    core.wait(0.3)
+                    return {
+                        "passed":         True,
+                        "n_trials":       trial_index + 1,
+                        "final_accuracy": window_accuracy,
+                    }
+
+        # Reached max_trials without meeting criterion
+        final_accuracy = float(np.mean(results[-window_size:])) if len(results) >= window_size else float(np.mean(results)) if results else 0.0
+
+        return {
+            "passed":         False,
+            "n_trials":       len(results),
+            "final_accuracy": final_accuracy,
+        }
+
+    # ------------------------ Show post-practice break screen ------------------------
+
+    # Show a brief break screen between practice and the main task.
+    def show_practice_break(self):    
+        if self.lang == "pl":
+            text = (
+                "Ćwiczenie zakończone.\n\n"
+                "Za chwilę rozpocznie się właściwe zadanie.\n\n"
+                "Naciśnij SPACJĘ, gdy będziesz gotowy/gotowa."
+            )
+        else:
+            text = (
+                "Practice complete.\n\n"
+                "The main task will now begin.\n\n"
+                "Press SPACE when you are ready."
+            )
+
+        msg = visual.TextStim(
+            self.win, text=text,
+            height=0.7, color="white", wrapWidth=20
+        )
+
+        self.kb.clearEvents()
+        while True:
+            msg.draw()
+            self.win.flip()
+            if self.kb.getKeys(keyList=["space"], clear=True):
+                break
+
     # ------------------------ Append one trial row to CSV ------------------------
 
     # Append one results row to a CSV file.
@@ -191,7 +347,7 @@ class Block:
         # Coherence shown to participants (linear units)
         start_coh = 0.58
         min_coh = 0.02
-        max_coh = 0.9
+        max_coh = 1.0   # the upper bound is 1.0 to allow QUEST to explore the full coherence range
 
         # PsychoPy QuestHandler "intensity" is log10 units, so convert coherence -> log10(coherence)
         start_intensity_log10 = float(np.log10(start_coh))
@@ -199,7 +355,12 @@ class Block:
         max_intensity_log10 = float(np.log10(max_coh))
 
         # startValSd must be in same units as startVal (log10 units here)
-        start_intensity_sd_log10 = 0.30
+        # set to 0.80 to ensure broad prior coverage.
+        # Pilot data showed thresholds as low as 0.08 (log10 = -1.10), which is
+        # 0.86 log10 units below the starting guess (log10(0.58) = -0.24).
+        # SD of 0.80 keeps this within ~1 SD of the prior mean, consistent with
+        # the original QUEST default of 2.0 (Watson & Pelli, 1983).
+        start_intensity_sd_log10 = 0.80
 
         # Initialize QUEST (parameters from Guénot et al., 2023): choose coherence via quantile selection
         quest = data.QuestHandler(
