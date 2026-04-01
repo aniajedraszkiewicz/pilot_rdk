@@ -197,7 +197,7 @@ def test_update_sets_elementarraystim_positions_shape(rdk):
     # DummyElementArrayStim stores last xys; should be (n_dots, 2)
     xys = rdk.dots_stim._xys
     assert xys is not None
-    assert xys.shape == (rdk.n_dots, 2)
+    assert xys.shape == (rdk.n_dots_in_sequence, 2)
     assert np.isfinite(xys).all()
 
 
@@ -286,3 +286,26 @@ def test_empirical_signal_fraction_tracks_coherence_roughly(rdk, coherence):
     tol = max(0.02, 6 * sd)  # always allow at least 0.02
 
     assert abs(emp - p) <= tol
+
+
+def test_active_dots_mask_interleaving(rdk):
+    """Verify that each sequence activates the correct interleaved indices."""
+    rdk.initialize_rdk_stim(direction=0, coherence=0.5)
+    
+    for expected_seq in range(rdk.n_sequences):
+        mask, _, seq = rdk.update_rdk_stim()
+        assert seq == expected_seq
+        expected_indices = set(range(expected_seq, rdk.n_dots, rdk.n_sequences))
+        actual_indices = set(np.where(mask)[0].tolist())
+        assert actual_indices == expected_indices
+
+
+def test_precomputed_geometry_values(rdk):
+    """Values must exist before any trial starts (write_summary runs before initialize)."""
+    expected_spatial = rdk.dot_speed / rdk.frame_rate * rdk.n_sequences
+    expected_temporal = rdk.n_sequences / rdk.frame_rate * 1000.0
+    expected_density = rdk.dot_density / rdk.frame_rate
+    
+    assert rdk.spatial_displacement == pytest.approx(expected_spatial)
+    assert rdk.temporal_displacement == pytest.approx(expected_temporal)
+    assert rdk.instantaneous_dot_density == pytest.approx(expected_density)

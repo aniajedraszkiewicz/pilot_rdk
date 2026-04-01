@@ -6,17 +6,17 @@ from psychopy import visual
 
 # ------------------------ Define and initialize class and set global parameters ------------------------
 
-    # All dots are divided into 3 interleaved groups. On each frame, only 1 group is updated
-    # and the other 2 groups remain unchanged (except when dots are respawned because they
-    # are outside the aperture or have reached their maximum lifetime). Updates follow a round-robin sequence, 
-    # so each group is updated once every 3 frames (Movshon/Newsome algorithm).
+# All dots are divided into 3 interleaved groups. On each frame, only 1 group is drawn on screen;
+# the other 2 groups are absent from the screen on that frame but will be drawn when their turn comes in the round-robin sequence.
+# Each group is drawn once every 3 frames: on its active frame the dot appears,
+# then it is absent for 2 frames, then reappears at a new position — producing apparent motion (Movshon/Newsome algorithm).
      
 
 class RDK:
     """
     RDK class constructor.
     Sets up all trial-invariant properties of the dot field:
-    - stores basic stimulus parameters (density, speed, frame rate, field size, number of sequences),
+    - stores basic stimulus parameters (density, speed, frame rate, field diameter, number of sequences),
     - computes the circular field area and total number of dots (n_dots),
     - ensures n_dots is divisible by n_sequences and derives dots per sequence,
     - configures dot lifetime tracking,
@@ -28,9 +28,9 @@ class RDK:
     def __init__(
             self, 
             win,                        # window where dots will be drawn in the single_trial class
-            dot_density = 0.55,         # [dots/deg²]
-            dot_speed = 5.0,            # [deg/s]
-            frame_rate = 60,            # [Hz] = [frame/s]
+            dot_density=16.7,           # [dots/deg²/s]
+            dot_speed = 12,             # [deg/s] default; overridden by Experiment based on target_displacement
+            frame_rate = 120,            # [Hz] = [frame/s]
             field_diameter = 18.0,      # [deg] diameter of the circular aperture where dots are sampled and respawned;
                                         # passed as the fieldSize parameter to PsychoPy's ElementArrayStim 
             n_sequences=3,              # total number of interleaved sequences
@@ -62,13 +62,16 @@ class RDK:
         field_area = np.pi * self.field_radius**2
 
         # Calculate the total number of dots in the pool 
-        self.n_dots = int(np.ceil(self.dot_density * field_area)) 
-            # n_dots - total number of dots (dot pool) – the full collection of all dots the algorithm manages internally.
-            # It's calculated as per frame, but not all dots are active each frame because of the Movshon–Newsome algorithm, where 
-            # only one subset (1/n_sequences) is UPDATED at a time (all dots are shown, but only 1 subset changes position on a given frame).
-            # Units check: (dot_density * field_area)
-            #              ([dots/deg²] * [deg²]) = [dots]
-    
+        self.n_dots = int(np.ceil(self.dot_density * field_area/self.frame_rate)) * self.n_sequences
+            # n_dots - total dot pool the algorithm manages internally across all n_sequences groups;
+            # only n_dots_in_sequence dots (= n_dots / n_sequences) are drawn on any given frame;
+            # the remaining dots are drawn when their sequence is active
+            # Step 1: dot_density * field_area / frame_rate = n_dots_in_sequence
+            #         — how many dots are visible on screen on any single frame
+            #         — Units: [dots/deg²/s] * [deg²] / [Hz] = [dots]
+            # Step 2: × n_sequences = n_dots
+            #         — multiply by 3 because all 3 groups must be stored in memory simultaneously;
+            #           each group needs to remember its positions between its turns    
         
         # Add extra dots if necessary to make the total number divisible by n_sequences 
         self.n_dots += (self.n_sequences - self.n_dots % self.n_sequences) % self.n_sequences
@@ -79,7 +82,8 @@ class RDK:
 
 
         # Calculate the number of dots in each sequence (group).
-        # This is the theoretical count of dots that should be active on a given frame.
+        # All 3 groups have this same size. On any frame, exactly one group
+        # (n_dots_in_sequence dots) is drawn on screen.
         self.n_dots_in_sequence = int(self.n_dots/self.n_sequences)  
         if (self.n_dots_in_sequence * self.n_sequences != self.n_dots):
             raise ValueError("Inconsistent dot counts: n_dots_in_sequence * n_sequences "
@@ -88,25 +92,30 @@ class RDK:
             # from n_dots_in_sequence * n_sequences. If not, something is inconsistent
             # with how n_dots was computed from dot_density, frame_rate and field_diameter.
         
+
+        # Pre-compute for logging — available before any trial starts.
+        self.spatial_displacement = float(self.dot_speed / self.frame_rate * self.n_sequences)  # how far a dot jumps each time it appears [deg]
+        self.temporal_displacement = float(self.n_sequences / self.frame_rate * 1000.0)         # time between consecutive appearances of the same dot [ms]
+        self.instantaneous_dot_density = float(self.dot_density / self.frame_rate)              # dot density per frame [dots/deg²/frame]
+
         
         # ----- Lifetime tracking -----
 
-        # Lifetime tracking: how long each dot has been on screen (in frames) and how many expired on the last frame. 
+        # Lifetime tracking: how long each dot has been alive (in frames) and how many expired on the last frame. 
         # Each dot, regardless of whether it is in the active sequence or not, has a
-        # maximum age of max_lifetime_frames = 12 video frames. On every frame, all dot_lifetimes are incremented by 1.
+        # maximum age of max_lifetime_frames video frames. On every frame, all dot_lifetimes are incremented by 1.
         # When a dot’s lifetime reaches max_lifetime_frames (or it leaves the aperture), it is respawned at a new random
         # location inside the circular field and its lifetime is reset to 0.
         # Note: dots belong to 1 of 3 interleaved sequences, so their motion is updated only every 3rd frame, but lifetime
         # is counted on EVERY frame.
         self.max_lifetime_frames = int(max_lifetime_frames)   # max age before a dot is respawned
         self.dot_lifetimes = np.zeros(self.n_dots, dtype=int) # current age of each dot (in frames)
-        self.n_expired_last = 0                               # number of dots that expired on the previous frame
+        self.n_expired_last = 0                               # diagnostic: number of dots that expired on the previous frame
         
 
         # ----- ElementArrayStim creation -----
 
-        # Create the ElementArrayStim that will hold the full pool of dots.
-        # It will be drawn later in the trial loop using self.rdk.dots_stim.draw().
+        # Create the ElementArrayStim that draws exactly n_dots_in_sequence dots per frame.
         self.dots_stim = visual.ElementArrayStim(
             win, 
             elementTex=None,            # no texture: solid dots, shape defined only by elementMask
@@ -114,11 +123,11 @@ class RDK:
                                         # but the actual sampling from the the circle are handled manually in the code.
             elementMask='circle',       # render each dot as a circle
             sizes=0.08,                 # size of each dot in degrees of visual angle
-            nElements = self.n_dots,    # total number of dots in the pool
+            nElements = self.n_dots_in_sequence,    # the number of dots in 1 group, drawn per frame
             units='deg', 
             fieldSize = self.field_diameter,
-            colors=[0.9, 0.9, 0.9],   # dot color (reference: [1,1,1] is max white)
-            colorSpace='rgb',         # defines what the numbers mean
+            colors=[1, 1, 1],           # dot color (reference: [1,1,1] is max white)
+            colorSpace='rgb',           # defines what the numbers mean
             )  
 
 
@@ -158,14 +167,14 @@ class RDK:
             # by n_sequences ensures that, even though each group moves only every 3rd frame, the overall
             # speed still matches dot_speed.
             # Example sanity check:
-            #   dot_speed    = 5 deg/s
-            #   frame_rate   = 60 Hz  (≈ 1/60 s per frame)
+            #   dot_speed    = 12 deg/s
+            #   frame_rate   = 120 Hz  (≈ 1/120 s per frame)
             #   n_sequences  = 3
-            #   displacement_per_frame   = 5 / 60 ≈ 0.0833 deg/frame
-            #   displacement_per_update  = 0.0833 * 3 ≈ 0.25 deg/update
+            #   displacement_per_frame   = 12 / 120 ≈ 0.1 deg/frame
+            #   displacement_per_update  = 0.1 * 3 ≈ 0.3 deg/update
             # So:
-            #   - If a dot moved every frame: 0.0833 deg/frame → 5 deg/s overall.
-            #   - Here it moves only every 3rd frame, but by 0.25 deg each time → still 5 deg/s overall.
+            #   - If a dot moved every frame: 0.1 deg/frame → 12 deg/s overall.
+            #   - Here it moves only every 3rd frame, but by 0.3 deg each time → still 12 deg/s overall.
 
         
         # Compute global motion direction for this trial.
@@ -186,9 +195,9 @@ class RDK:
 
         # ----- Active dots mask for the current sequence -----
 
-        # Create a boolean mask to track which dots currently belong to the group being updated in the current sequence 
-        # (i.e. dots active on this frame).
-        # Initially all values are False; on each frame, 1 out of n_sequences subsets is set to True  
+        # Create a boolean mask of length n_dots to track which dots belong to the group being updated in the current sequence 
+        # (i.e. dots active on this frame). Initially all values are False; on each frame, 1 out of n_sequences subsets is set to True,
+        # giving exactly n_dots_in_sequence True entries (because n_dots is divisible by n_sequences).  
         self.active_dots_mask = np.zeros(self.n_dots, dtype=bool)   
                                                               
         
@@ -289,7 +298,7 @@ class RDK:
         # ----- Signal and noise mask assignment -----
 
         # Create a boolean mask for all dots (length equal to the total number of dots).
-        # Initially all values are False; on each frame, signal dots are marked True.
+        # Initially all values are False; on each frame, signal dots are marked True (only out of active dots). 
         self.signal_dots_mask = np.zeros((self.n_dots), dtype=bool)  
    
         # Decide which active dots are signal and which are noise: for each active dot, draw a random float in [0, 1) and mark it as signal (True)
@@ -330,7 +339,7 @@ class RDK:
         # then convert these polar coordinates (r, θ) to Cartesian (x, y).
         # As a result, noise dots flicker by jumping to new random locations on each frame
         if n_noise_dots > 0:
-            # Same sampling scheme as in initialize_dot_stim: random angle + radius (uniform in circle)
+            # Same sampling scheme as in initialize_rdk_stim: random angle + radius (uniform in circle)
             radius = self.field_radius
 
             rand_theta = self.rng.random(n_noise_dots) * 2.0 * np.pi
@@ -389,13 +398,16 @@ class RDK:
         # ----- ElementArrayStim coordinates update -----
         
         # Prepare coordinates for drawing: dots_coordinates has shape (2, n_dots) → [0, :] = x, [1, :] = y.
-        # ElementArrayStim expects positions as (n_dots, 2), so we transpose before passing them.
-        xys = self.dots_coordinates.T  # shape: (n_dots, 2)
+        # active_dots_mask has exactly n_dots_in_sequence True entries; 
+        # indexing with active_dots_mask selects the n_dots_in_sequence columns of the current
+        # sequence. ElementArrayStim expects positions as (n_dots_in_sequence, 2), so we transpose.
+        xys = self.dots_coordinates[:, self.active_dots_mask].T  # shape: (n_dots_in_sequence, 2)
 
-        # xys is passed to the ElementArrayStim (dots_stim) to update all dot positions in the stimulus
+        # xys is passed to the ElementArrayStim (dots_stim) to update dot positions in the stimulus
         self.dots_stim.setXYs(xys)
                         
         return self.active_dots_mask, self.dots_coordinates, self.current_sequence_index
+
     
 # ---------------------------------------------------------
 

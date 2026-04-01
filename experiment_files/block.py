@@ -12,7 +12,7 @@ class Block:
     """
     This class runs one block of trials. It uses the Trial class, and also:
         - shows the block intro screen,
-        - shows a fixation cross before each trial,
+        - shows a fixation dot before each trial,
         - controls the between-trial sequence (fixation → choose coherence/direction → run Trial → check correctness → log),
         - marks responses as correct/incorrect,
         - updates the QUEST posterior based on trial outcomes to adaptively select
@@ -63,9 +63,8 @@ class Block:
 
         # Pre-create fixation stimulus once to avoid repeated object
         # creation across trials (reduces memory buildup and timing jitter)
-        self.fixation_stim = visual.TextStim(
-            self.win, text='+', height=1.2,
-            color=(0.9, 0.9, 0.9), colorSpace='rgb')
+        self.fixation_stim = visual.Circle(
+            self.win, radius=0.1, pos=(0, 0),fillColor=[0.0, 0.4, 0.0], lineColor=[0.0, 0.4, 0.0], units='deg')
     
     # ------------------------ Show intro screen ------------------------
 
@@ -138,7 +137,7 @@ class Block:
 
     # ------------------------ Show fixation and store timing ------------------------
 
-    # Show a fixation cross for a fixed duration and store its timing
+    # Show a fixation dot for a fixed duration and store its timing
     def show_fixation(self, seconds=1.0):
         txt = self.fixation_stim
         clock = core.Clock()
@@ -160,7 +159,7 @@ class Block:
                 core.quit()
                 return
 
-            # Draw the fixation cross and show it on the next screen refresh (flip)
+            # Draw the fixation dot and show it on the next screen refresh (flip)
             txt.draw()
             fix_offset_time = self.win.flip() # store the timestamp of this flip
 
@@ -179,23 +178,19 @@ class Block:
 
     # ------------------------ Practice block with feedback ------------------------
 
-    # Run a practice block with trial-by-trial feedback and an accuracy criterion. Each trial uses a fixed coherence level. 
-    # After every trial, the participant sees brief feedback ("Correct" / "Incorrect"). Practice ends when either:
-    #   (a) accuracy over the last `window_size` trials >= `accuracy_criterion`, OR
-    #   (b) `max_trials` trials have been completed.
+    # Run a practice block with trial-by-trial feedback. Each trial uses a fixed coherence level. 
+    # After every trial, the participant sees brief feedback ("Correct" / "Incorrect"). Practice ends after 40 trials
 
     def run_practice_block(
         self,
         practice_coherence=0.7,   # fixed coherence used throughout practice
-        window_size=20,            # how many recent trials to evaluate
-        accuracy_criterion=0.75,  # proportion correct needed to pass
-        max_trials=120,            # hard ceiling: stop even if criterion not met
+        trials=40,              # number of trials to run
     ):
         # Reuse the same Trial runner as the main block
         trial_runner = Trial(
             self.win, self.kb, self.rdk,
-            self.max_stim_sec, debug=self.debug
-        )
+            self.max_stim_sec, fixation_stim=self.fixation_stim, debug=self.debug)
+        
         # Prepare feedback stimuli once (not inside the loop — saves time)
         if self.lang == "pl":
             correct_text  = "Poprawnie ✓"
@@ -204,17 +199,18 @@ class Block:
             correct_text  = "Correct ✓"
             incorrect_text = "Incorrect ✗"
 
-        feedback_correct = visual.TextStim(self.win, text=correct_text, height=1.0, color="lime")
+        feedback_correct = visual.TextStim(self.win, text=correct_text, height=1.0, color="lime", pos=(0, 2))
 
-        feedback_incorrect = visual.TextStim(self.win, text=incorrect_text,height=1.0, color="red")
+        feedback_incorrect = visual.TextStim(self.win, text=incorrect_text,height=1.0, color="red",pos=(0, 2))
 
         results = []   # stores 1 (correct) or 0 (incorrect) for each trial
 
-        for trial_index in range(max_trials):
+        for trial_index in range(trials):
 
             # Fixation 
             self.last_fix = None
-            self.show_fixation(seconds=1.0)
+            fix_sec = 0.5 + self.rng.random() * 0.5  # jittered [0.5, 1.0] to allow refixation and prevent temporal anticipation
+            self.show_fixation(seconds=fix_sec)
             if self.last_fix is None:
                 break                      # ESC was pressed during fixation
 
@@ -230,9 +226,13 @@ class Block:
 
             # Score response 
             correct_key = "right" if direction == 0 else "left"
-            is_correct = 0 if result["timeout"] else int(
-                result["response_key"] == correct_key
-            )
+
+            # Mark response as correct or incorrect
+            # Timeouts are always incorrect; otherwise check if response matches the correct key
+            if result["timeout"]:
+                is_correct = 0
+            else:
+                is_correct = 1 if result["response_key"] == correct_key else 0
             results.append(is_correct)
 
             # Log to CSV (same format as main block) 
@@ -245,7 +245,7 @@ class Block:
                 "condition":                  "practice",
                 "direction":                  direction,
                 "coherence":                  float(practice_coherence),
-                "intensity_log10":            float(np.log10(practice_coherence)),
+                "intensity_log10":            None,
                 "threshold_estimate_log10":   None,
                 "threshold_estimate_coh":     None,
                 "response_key":               result.get("response_key"),
@@ -273,45 +273,59 @@ class Block:
             fb = feedback_correct if is_correct else feedback_incorrect
             feedback_end = core.Clock()
             while feedback_end.getTime() < 0.5:
+                self.fixation_stim.draw()
                 fb.draw()
                 self.win.flip()
 
-            # Check rolling criterion (only once we have enough trials)
-            if len(results) >= window_size:
-                window_accuracy = float(np.mean(results[-window_size:]))
-                if window_accuracy >= accuracy_criterion:
-                    # Criterion met — blank screen briefly then exit
-                    self.win.flip()
-                    core.wait(0.3)
-                    return {
-                        "passed":         True,
-                        "n_trials":       trial_index + 1,
-                        "final_accuracy": window_accuracy,
-                    }
 
-        # Reached max_trials without meeting criterion
-        final_accuracy = float(np.mean(results[-window_size:])) if len(results) >= window_size else float(np.mean(results)) if results else 0.0
-
+        # Calculate final accuracy across all trials
+        final_accuracy = float(np.mean(results)) if results else 0.0
+ 
         return {
-            "passed":         False,
             "n_trials":       len(results),
             "final_accuracy": final_accuracy,
+            "responses":      results,
         }
 
-    # ------------------------ Show post-practice break screen ------------------------
+    # ------------------------ Show inter-block break screen ------------------------
 
-    # Show a brief break screen between practice and the main task.
-    def show_practice_break(self):    
+    # Show a generic break screen between blocks (participant presses SPACE to continue)
+
+    def show_break(self):    
         if self.lang == "pl":
             text = (
-                "Ćwiczenie zakończone.\n\n"
-                "Za chwilę rozpocznie się właściwe zadanie.\n\n"
+                "Krótka przerwa.\n\n"
                 "Naciśnij SPACJĘ, gdy będziesz gotowy/gotowa."
             )
         else:
             text = (
-                "Practice complete.\n\n"
-                "The main task will now begin.\n\n"
+                "Take a short break.\n\n"
+                "Press SPACE when you are ready."
+            )
+
+        msg = visual.TextStim(
+            self.win, text=text,
+            height=0.7, color="white", wrapWidth=20
+        )
+
+        self.kb.clearEvents()
+        while True:
+            msg.draw()
+            self.win.flip()
+            if self.kb.getKeys(keyList=["space"], clear=True):
+                break
+
+    def show_break_no_feedback(self):    
+        if self.lang == "pl":
+            text = (
+                "Krótka przerwa.\n\n"
+                "Teraz informacje zwrotne nie będą się pojawiały. \n\n"
+                "Naciśnij SPACJĘ, gdy będziesz gotowy/gotowa."
+            )
+        else:
+            text = (
+                "Take a short break.\n\n"
+                "Now the feedback will no longer be displayed. \n\n"
                 "Press SPACE when you are ready."
             )
 
@@ -338,11 +352,121 @@ class Block:
             if new_file:
                 w.writeheader()
             w.writerow(row)
+
+    # ------------------------- Levels block (4 coherence levels) ----------------
+
+    # Run a validation block: 4 fixed coherence levels × trials_per_level trials, in random interleaved order.
+    # No accuracy criterion — always runs all trials. No feedback shown.
+
+    def run_levels_block(self, trials_per_level=20):
+       
+        
+        validation_coherences = [0.32, 0.16, 0.08, 0.04]
+
+        # Build a random list of all trials: trials_per_level repeats of each coherence level
+        trial_coherences = list(validation_coherences) * trials_per_level
+        self.rng.shuffle(trial_coherences)
+
+        
+        # Reuse the same Trial runner as the main block
+        trial_runner = Trial(
+            self.win, self.kb, self.rdk,
+            self.max_stim_sec, fixation_stim=self.fixation_stim,debug=self.debug)
+        
+        results = []   # stores 1 (correct) or 0 (incorrect) for each trial
+        correct_by_level = {coh: [] for coh in validation_coherences}  # per-level correctness
+
+
+        for trial_index, coherence in enumerate(trial_coherences):
+
+            # Fixation 
+            self.last_fix = None
+            fix_sec = 0.5 + self.rng.random() * 0.5  # jittered [0.5, 1.0] to allow refixation and prevent temporal anticipation
+            self.show_fixation(seconds=fix_sec)
+            if self.last_fix is None:
+                break                      # ESC was pressed during fixation
+
+            self.kb.clearEvents()
+
+            # Random direction 
+            direction = 0 if self.rng.random() < 0.5 else 180
+
+            # Run trial 
+            result = trial_runner.run_single_trial(direction, coherence)
+
+            if result is None:
+                break                      # ESC was pressed during trial
+
+
+            # Score response
+            correct_key = "right" if direction == 0 else "left"
+
+
+
+            # Mark response as correct or incorrect
+            # Timeouts are always incorrect; otherwise check if response matches the correct key
+            if result["timeout"]:
+                is_correct = 0
+            else:
+                is_correct = 1 if result["response_key"] == correct_key else 0
+            results.append(is_correct)
+            correct_by_level[coherence].append(is_correct)
+
+            # Log to CSV (same format as main block)
+            fix = self.last_fix or {}
+            row = {
+                "timestamp":                  datetime.now().isoformat(timespec="seconds"),
+                "subject_id":                 self.subject_id,
+                "block_no":                   self.block_no,
+                "trial_no":                   trial_index + 1,
+                "condition":                  "validation",
+                "direction":                  direction,
+                "coherence":                  float(coherence),
+                "intensity_log10":            None,
+                "threshold_estimate_log10":   None,
+                "threshold_estimate_coh":     None,
+                "response_key":               result.get("response_key"),
+                "correct_key":                correct_key,
+                "is_correct":                 is_correct,
+                "reaction_time":              result.get("reaction_time"),
+                "timeout":                    result.get("timeout"),
+                "global_onset_time":          result.get("global_onset_time"),
+                "response_flip_time":         result.get("response_flip_time"),
+                "response_frame_idx":         result.get("response_frame_idx"),
+                "response_detected_time":     result.get("response_detected_time"),
+                "stimulus_on_screen_duration":result.get("stimulus_on_screen_duration"),
+                "frame_count":                result.get("frame_count"),
+                "estimated_fps":              result.get("estimated_fps"),
+                "n_long_frames":              result.get("n_long_frames"),
+                "max_flip_interval":          result.get("max_flip_interval"),
+                "fix_onset_time":             fix.get("fix_onset_time"),
+                "fix_offset_time":            fix.get("fix_offset_time"),
+                "fix_duration":               fix.get("fix_duration"),
+                "fix_target_sec":             fix.get("fix_target_sec"),
+            }
+            self.append_log_row(self.results_csv_path, row, self.results_header)
+ 
+        # Calculate final accuracy across all trials
+        final_accuracy = float(np.mean(results)) if results else 0.0
+
+        # Accuracy per coherence level
+        accuracy_by_level = {
+            float(coh): float(np.mean(vals)) if vals else None
+            for coh, vals in correct_by_level.items()
+        }
+ 
+        return {
+            "n_trials":       len(results),
+            "final_accuracy": final_accuracy,
+            "accuracy_by_level": accuracy_by_level,
+        }
+
+
     
-    # ------------------------ Initialize QUEST ------------------------
+    # ------------------------ QUEST adaptive block ------------------------
 
     # Run one QUEST block: loop over adaptive trials, update QUEST from correctness, and log each trial
-    def run_block(self):  
+    def run_quest_block(self):  
 
         # Coherence shown to participants (linear units)
         start_coh = 0.58
@@ -355,14 +479,14 @@ class Block:
         max_intensity_log10 = float(np.log10(max_coh))
 
         # startValSd must be in same units as startVal (log10 units here)
-        # set to 0.80 to ensure broad prior coverage.
+        # set to 0.95 to ensure broad prior coverage.
         # Pilot data showed thresholds as low as 0.08 (log10 = -1.10), which is
         # 0.86 log10 units below the starting guess (log10(0.58) = -0.24).
-        # SD of 0.80 keeps this within ~1 SD of the prior mean, consistent with
+        # SD of 0.95 keeps this within ~1 SD of the prior mean, consistent with
         # the original QUEST default of 2.0 (Watson & Pelli, 1983).
-        start_intensity_sd_log10 = 0.80
+        start_intensity_sd_log10 = 0.95
 
-        # Initialize QUEST (parameters from Guénot et al., 2023): choose coherence via quantile selection
+        # Initialize QUEST (parameters from Guénot et al., 2023 and Watson & Pelli, 1983): choose coherence via quantile selection
         quest = data.QuestHandler(
             startVal=start_intensity_log10,             # prior mean: initial threshold guess (log10 coherence)
             startValSd=start_intensity_sd_log10,        # prior SD in log10: uncertainty about the initial guess
@@ -379,7 +503,7 @@ class Block:
 
 
         # Create a Trial object that runs a single trial when called (reused across trials in this block)
-        trial_runner = Trial(self.win, self.kb, self.rdk, self.max_stim_sec, debug=self.debug) 
+        trial_runner = Trial(self.win, self.kb, self.rdk, self.max_stim_sec, fixation_stim=self.fixation_stim, debug=self.debug) 
     
         # Collect the running threshold estimate after each QUEST update
         threshold_estimates_history_log10 = []
@@ -416,7 +540,9 @@ class Block:
 
             # Reset fixation timing from the previous trial, then show fixation and store its timing in self.last_fix
             self.last_fix = None
-            self.show_fixation(seconds=1.0)
+            fix_sec = 0.5 + self.rng.random() * 0.5  # jittered [0.5, 1.0] to allow refixation and prevent temporal anticipation
+            self.show_fixation(seconds=fix_sec)
+
 
             # Store fixation timing for logging; stop if fixation was interrupted (e.g., ESC)
             fix = self.last_fix
@@ -456,7 +582,10 @@ class Block:
                         fp += 1
 
             # Mark correctness for QUEST (treat timeout as incorrect).
-            is_correct = 0 if result["timeout"] else int(result["response_key"] == correct_key)
+            if result["timeout"]:
+                is_correct = 0
+            else:
+                is_correct = 1 if result["response_key"] == correct_key else 0
 
             # Record trial correctness in QUEST so the posterior threshold estimate
             # is updated and the next coherence level can be selected adaptively
@@ -569,7 +698,44 @@ class Block:
 
         return diagnostics
     
-    
+    # -------------------- Complete Adaptive Pilot ------------------
+
+    def run_adaptive_pilot(self):
+
+        
+        practice_07 = self.run_practice_block(practice_coherence=0.7, trials=20)
+        if practice_07["final_accuracy"] < 0.75:
+            practice_07_extra = self.run_practice_block(practice_coherence=0.7, trials=20)
+            combined = practice_07["responses"] + practice_07_extra["responses"]
+            practice_07["responses"] = combined
+            practice_07["n_trials"] = len(combined)
+            practice_07["final_accuracy"] = float(np.mean(combined))
+        self.show_break()
+ 
+        practice_04 = self.run_practice_block(practice_coherence=0.4, trials=30)
+        if practice_04["final_accuracy"] < 0.75:
+            practice_04_extra = self.run_practice_block(practice_coherence=0.4, trials=20)
+            combined = practice_04["responses"] + practice_04_extra["responses"]
+            practice_04["responses"] = combined
+            practice_04["n_trials"] = len(combined)
+            practice_04["final_accuracy"] = float(np.mean(combined))
+            
+        self.show_break_no_feedback()
+ 
+        validation = self.run_levels_block(trials_per_level=20)
+        self.show_break()
+ 
+        quest = self.run_quest_block()
+ 
+        return {
+            "practice_07": practice_07,
+            "practice_04": practice_04,
+            "validation":  validation,
+            "quest":       quest,
+        }
+
+
+
     # Close the PsychoPy window and exit
     def quit(self):
         self.win.close()

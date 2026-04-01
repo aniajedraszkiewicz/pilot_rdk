@@ -25,7 +25,7 @@ else:
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import psychopy
-from psychopy import visual, monitors, core, gui, prefs
+from psychopy import visual, monitors, core, gui, prefs, data
 from psychopy.hardware import keyboard
 from datetime import datetime
 import numpy as np
@@ -105,7 +105,86 @@ def plot_diagnostics(diagnostics, base_path):
     fig.savefig(base_path + "_quest_diagnostics.png")
     plt.close(fig)
 
-
+def fit_and_plot_psychometric(accuracy_by_level, summary_path, section_fn, line_fn, base_path):
+    """
+    Fit a Weibull psychometric function to validation accuracy data,
+    write results to the summary file, and save a plot.
+    Uses PsychoPy built-in data.FitWeibull.
+    """
+    coherences = sorted(accuracy_by_level.keys())
+    proportions = [accuracy_by_level[c] for c in coherences]
+ 
+    fit = data.FitWeibull(coherences, proportions, expectedMin=0.5, display=0)
+    threshold = float(fit.inverse(0.75))
+ 
+    # Write fit results to summary file
+    with open(summary_path, "a", encoding="utf-8") as f:
+        f.write(section_fn("VALIDATION — PSYCHOMETRIC FIT (Weibull)"))
+        f.write(line_fn("Threshold (75% correct):", round(threshold, 4)))
+        f.write(line_fn("Slope:", round(float(fit.params[1]), 4)))
+        for coh in coherences:
+            val = accuracy_by_level[coh]
+            f.write(line_fn(f"  Accuracy at coherence {coh}:", round(val, 3) if val is not None else "NA"))
+ 
+    # Plot data points and fitted curve
+    x_fit = np.linspace(min(coherences) * 0.5, max(coherences) * 1.2, 200)
+    y_fit = [float(fit.eval(x)) for x in x_fit]
+ 
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(coherences, proportions, "o", markersize=8, label="Validation data")
+    ax.plot(x_fit, y_fit, "-", linewidth=2, label="Weibull fit")
+    ax.axvline(threshold, color="gray", linestyle="--", linewidth=1)
+    ax.axhline(0.75, color="gray", linestyle="--", linewidth=1)
+    ax.annotate(f"threshold = {threshold:.3f}",
+                xy=(threshold, 0.75), xytext=(threshold + 0.02, 0.65),
+                fontsize=9, color="gray")
+    ax.set_xlabel("Coherence")
+    ax.set_ylabel("Proportion correct")
+    ax.set_title("Psychometric function — validation block")
+    ax.set_ylim(0.4, 1.05)
+    ax.legend(fontsize=9)
+    ax.grid(True)
+    fig.tight_layout()
+    fig.savefig(base_path + "_psychometric.png")
+    plt.close(fig)
+ 
+ 
+def plot_accuracy_comparison(practice_07, practice_04, validation, base_path):
+    """
+    Bar chart comparing accuracy across practice blocks and each validation coherence level.
+    """
+    # Build labels and values
+    labels = ["Practice 0.7", "Practice 0.4"]
+    values = [practice_07["final_accuracy"], practice_04["final_accuracy"]]
+    colors = ["steelblue", "darkorange"]
+ 
+    acc = validation["accuracy_by_level"]
+    for coh in sorted(acc.keys()):
+        labels.append(f"Validation {coh}")
+        values.append(acc[coh] if acc[coh] is not None else 0.0)
+        colors.append("seagreen")
+ 
+    fig, ax = plt.subplots(figsize=(8, 4))
+    bars = ax.bar(labels, values, color=colors, edgecolor="white", linewidth=0.8)
+ 
+    ax.axhline(0.75, color="gray", linestyle="--", linewidth=1, label="75% criterion")
+    ax.axhline(0.5, color="lightgray", linestyle=":", linewidth=1, label="Chance (50%)")
+ 
+    # Label each bar with its value
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
+                f"{val:.2f}", ha="center", va="bottom", fontsize=9)
+ 
+    ax.set_ylabel("Proportion correct")
+    ax.set_title("Accuracy by block and coherence level")
+    ax.set_ylim(0, 1.15)
+    ax.legend(fontsize=8)
+    ax.grid(axis="y")
+ 
+    fig.tight_layout()
+    fig.savefig(base_path + "_accuracy_comparison.png")
+    plt.close(fig)
+ 
 class Experiment:
     """
     This class is a high-level experiment controller. It is responsible for:
@@ -198,6 +277,7 @@ class Experiment:
             waitBlanking=True,   # try to sync flips to the monitor refresh (vsync) for more stable frame timing
             useFBO=True,         # off-screen rendering; improves frame timing stability on some computers
         )
+        self.win.mouseVisible = False
 
         # Debug: Retina Macs often report win.size in framebuffer pixels (2× scale)
         print("win.useRetina =", getattr(self.win, "useRetina", None))
@@ -238,9 +318,9 @@ class Experiment:
     # Measure refresh rate and define parameters
     def measure_and_define_parameters(self):
         self.measured_rate = self.measure_refresh_rate()
-        self.dot_speed = 5.0               # deg/s 
-        self.dot_density = 0.55            # dots/deg² 
-
+        target_displacement = 0.28                                       # deg — MT Dopt range (Pilly and Seitz, 2009)
+        self.dot_speed = target_displacement * self.measured_rate / 3.0  # auto-corrects for any Hz
+        self.dot_density = 30.0                               # dots/deg²/s 
 
         # Print a quick sanity check
         print(f"Measured refresh rate: {self.measured_rate:.2f} Hz")
@@ -250,7 +330,7 @@ class Experiment:
 
         """
         1. Use PsychoPy getActualFrameRate() when available.
-        2. Otherwise assume 60 Hz.
+        2. If rate cannot be measured, display an error on screen and abort.
         3. Always record raw flip timing for later inspection 
         """
         # PsychoPy function that measures flip stability across frames and 
@@ -268,9 +348,27 @@ class Experiment:
             self.refresh_rate_method = "getActualFrameRate"
         
         else:
-            # PsychoPy could not determine a stable refresh rate
-            refresh_rate_hz = 60.0
-            self.refresh_rate_method = "default_60hz"
+            # Display error on screen so the experimenter sees it clearly
+            msg = visual.TextStim(
+                self.win,
+                text=(
+                    "Could not measure a stable refresh rate.\n\n"
+                    "Please check:\n"
+                    "- Is the monitor set to sync to vertical blank (vsync)?\n"
+                    "- Are other applications running?\n"
+                    "- Is the monitor refresh rate set correctly in system settings?\n\n"
+                    "Press ESC to quit."
+                ),
+                height=0.7, color="white", wrapWidth=20
+            )
+            self.kb.clearEvents()
+            while True:
+                msg.draw()
+                self.win.flip()
+                if self.kb.getKeys(keyList=["escape"], clear=True):
+                    self.win.close()
+                    core.quit()
+                    return
                       
         # Store flip-to-flip durations using the built-in function (seconds)
         self.win.recordFrameIntervals = True
@@ -377,9 +475,12 @@ class Experiment:
             
             # Stimulus parameters 
             f.write(self._section("RDK STIMULUS"))
-            f.write(self._line("Dot speed (deg/s):", self.dot_speed))
-            f.write(self._line("Dot density (dots/deg²):", self.dot_density))
+            f.write(self._line("Dot speed (deg/s):", round(self.dot_speed,2)))
+            f.write(self._line("Dot density (dots/deg²/s):", self.dot_density))
             f.write(self._line("Total dots:", self.rdk.n_dots))
+            f.write(self._line("Spatial displacement (deg):", round(self.rdk.spatial_displacement, 2)))
+            f.write(self._line("Temporal displacement (ms):", round(self.rdk.temporal_displacement, 2)))
+            f.write(self._line("Instantaneous dot density (dots/deg²):", round(self.rdk.instantaneous_dot_density, 2)))
             f.write(self._line("Field diameter (deg):", self.rdk.field_diameter))
 
             # Per-sequence dot count 
@@ -403,9 +504,8 @@ class Experiment:
         print(f"\n Summary saved to: {os.path.abspath(summary_path)}")
 
 
-    # Run the experiment block(s): show intro, run QUEST block, save diagnostics and plots
-    # Pilot version: fixed trials are not loaded here. QUEST selects coherence adaptively inside Block.run_block().
-    # Main version: replace QUEST with predetermined trials loaded from a CSV here.
+    # Run the adaptive pilot experiment: practice (0.7), practice (0.4), validation, QUEST.
+
     def run_experiment(self):
        
         # CSV header defines the order of columns written by Block.append_log_row()
@@ -421,7 +521,8 @@ class Experiment:
             "response_detected_time",
             "stimulus_on_screen_duration",
             "frame_count","estimated_fps", "n_long_frames",
-            "max_flip_interval" , "fix_onset_time","fix_offset_time","fix_duration","fix_target_sec",
+            "max_flip_interval" ,
+            "fix_onset_time","fix_offset_time","fix_duration","fix_target_sec",
         ]
         
         # Single block for now (extend to multiple blocks later if needed)
@@ -457,43 +558,48 @@ class Experiment:
         # Show instructions before starting trials
         block.show_intro()  
 
-        # Run practice phase before QUEST begins
-        practice_result = block.run_practice_block(
-            practice_coherence=0.7,
-            window_size=20,
-            accuracy_criterion=0.75,
-            max_trials=120,
-        )
-        print(f"Practice ended after {practice_result['n_trials']} trials. "
-            f"Passed: {practice_result['passed']}. "
-            f"Final accuracy: {practice_result['final_accuracy']:.2f}")
-
-        if not practice_result["passed"]:
-            print("[WARNING] Participant did not meet practice criterion. Consider repeating.")
-
-        with open(summary_path, "a", encoding="utf-8") as f:
-            f.write(self._section("PRACTICE RESULTS"))
-            f.write(self._line("Trials completed:", practice_result["n_trials"]))
-            f.write(self._line("Criterion met:", practice_result["passed"]))
-            f.write(self._line("Final accuracy:", round(practice_result["final_accuracy"], 3)))
-
-        block.show_practice_break()
-    
-        # Run adaptive QUEST block (trial loop + CSV logging happen inside Block.run_block())
-        diagnostics = block.run_block()
-
+        # Run the adaptive pilot: practice (0.7), practice (0.4), validation, QUEST
+        pilot_results = block.run_adaptive_pilot()
+        diagnostics = pilot_results["quest"] if pilot_results else None
+ 
         # If the block was aborted (ESC), stop cleanly
         if diagnostics is None:
             return
-
+ 
         # Show outro to participant (break / end message)
         block.show_outro()
-        
+
+        # Base path for all output files (plots, etc.)
+        diag_base = self.results_csv_path.replace(".csv", "")
+
         # Quick console feedback
         overall_accuracy = diagnostics["overall_accuracy"]
         print("Overall accuracy across QUEST trials:", round(overall_accuracy, 3))
        
+        # Append practice and validation results to the summary file
+        with open(summary_path, "a", encoding="utf-8") as f:
+            f.write(self._section("PRACTICE (coherence 0.7)"))
+            f.write(self._line("Trials completed:", pilot_results["practice_07"]["n_trials"]))
+            f.write(self._line("Final accuracy:", round(pilot_results["practice_07"]["final_accuracy"], 3)))
+ 
+            f.write(self._section("PRACTICE (coherence 0.4)"))
+            f.write(self._line("Trials completed:", pilot_results["practice_04"]["n_trials"]))
+            f.write(self._line("Final accuracy:", round(pilot_results["practice_04"]["final_accuracy"], 3)))
+ 
+            f.write(self._section("VALIDATION"))
+            f.write(self._line("Trials completed:", pilot_results["validation"]["n_trials"]))
+            f.write(self._line("Final accuracy:", round(pilot_results["validation"]["final_accuracy"], 3)))
         
+        
+         # Fit Weibull, write results to summary, and save plot
+        try:
+            fit_and_plot_psychometric(
+                pilot_results["validation"]["accuracy_by_level"],
+                summary_path, self._section, self._line, diag_base
+            )
+        except Exception as e:
+            print(f"[WARNING] Psychometric fit/plot failed: {e}")
+
         # Append QUEST diagnostics to the same summary file
         with open(summary_path, "a", encoding="utf-8") as f:
             
@@ -549,9 +655,14 @@ class Experiment:
                     f"{_fmt(diagnostics.get('bias_specificity_right'), 2)}\n")
 
         
-        # Save diagnostic plot using the same base name as the CSV
-        diag_base = self.results_csv_path.replace(".csv", "")
+        # Save QUEST diagnostic plot
         plot_diagnostics(diagnostics, diag_base)
+ 
+        # Save accuracy comparison across all blocks and coherence levels
+        try:
+            plot_accuracy_comparison(pilot_results["practice_07"], pilot_results["practice_04"], pilot_results["validation"], diag_base)
+        except Exception as e:
+            print(f"[WARNING] Accuracy comparison plot failed: {e}")
         
 
     # Close the PsychoPy window and quit

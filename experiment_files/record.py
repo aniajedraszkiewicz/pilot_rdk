@@ -109,7 +109,7 @@ def main():
     # --------------------
     rdk = RDK(
         win=win,
-        dot_density=0.7,
+        dot_density=25.0,
         dot_speed=5.0,
         frame_rate=fps,          # match measured (or fallback) fps for correct speed
         field_diameter=18.0,
