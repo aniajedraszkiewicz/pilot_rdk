@@ -28,9 +28,10 @@ class RDK:
     def __init__(
             self, 
             win,                        # window where dots will be drawn in the single_trial class
-            dot_density=16.7,           # [dots/deg²/s]
+            dot_density=24.0,           # [dots/deg²/s] chosen to match Pilly & Seitz (2009) instantaneous density of 0.20 dots/deg²;
+                                        # (16.7 dots/deg²/s at 85 Hz → 50 dots/frame); scaled to ~120 Hz: 0.20 × 120 = 24.0 dots/deg²/s → ~51 dots/frame
             dot_speed = 12,             # [deg/s] default; overridden by Experiment based on target_displacement
-            frame_rate = 120,            # [Hz] = [frame/s]
+            frame_rate = 120,           # [Hz] = [frame/s]
             field_diameter = 18.0,      # [deg] diameter of the circular aperture where dots are sampled and respawned;
                                         # passed as the fieldSize parameter to PsychoPy's ElementArrayStim 
             n_sequences=3,              # total number of interleaved sequences

@@ -320,7 +320,7 @@ class Experiment:
         self.measured_rate = self.measure_refresh_rate()
         target_displacement = 0.28                                       # deg — MT Dopt range (Pilly and Seitz, 2009)
         self.dot_speed = target_displacement * self.measured_rate / 3.0  # auto-corrects for any Hz
-        self.dot_density = 30.0                               # dots/deg²/s 
+        self.dot_density = 24.0                                          # dots/deg²/s 
 
         # Print a quick sanity check
         print(f"Measured refresh rate: {self.measured_rate:.2f} Hz")
