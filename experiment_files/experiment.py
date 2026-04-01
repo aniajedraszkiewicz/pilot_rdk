@@ -482,6 +482,8 @@ class Experiment:
             f.write(self._line("Temporal displacement (ms):", round(self.rdk.temporal_displacement, 2)))
             f.write(self._line("Instantaneous dot density (dots/deg²):", round(self.rdk.instantaneous_dot_density, 2)))
             f.write(self._line("Field diameter (deg):", self.rdk.field_diameter))
+            f.write(self._line("Field area (deg²):", round(np.pi * (self.rdk.field_radius ** 2),2)))
+
 
             # Per-sequence dot count 
             dots_per_seq = self.rdk.n_dots // self.rdk.n_sequences

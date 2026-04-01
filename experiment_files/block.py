@@ -727,7 +727,7 @@ class Block:
  
         quest = self.run_quest_block()
  
-        return {
+        return { 
             "practice_07": practice_07,
             "practice_04": practice_04,
             "validation":  validation,
