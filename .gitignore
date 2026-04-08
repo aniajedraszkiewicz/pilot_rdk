@@ -73,3 +73,4 @@ experiment_files/data/*.psyexp
 # Keep the trials definition CSV
 !experiment_files/data/trials_exp.csv
 
+experiment_files/rdk_diagnostic_report.pdf

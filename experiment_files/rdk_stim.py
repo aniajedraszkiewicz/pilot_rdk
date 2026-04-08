@@ -20,7 +20,7 @@ class RDK:
     - computes the circular field area and total number of dots (n_dots),
     - ensures n_dots is divisible by n_sequences and derives dots per sequence,
     - configures dot lifetime tracking,
-    - creates the PsychoPy ElementArrayStim that will later be drawn with .draw().
+    - creates the PsychoPy ElementArrayStim.
 
     """   
 
@@ -28,15 +28,19 @@ class RDK:
     def __init__(
             self, 
             win,                        # window where dots will be drawn in the single_trial class
-            dot_density=24.0,           # [dots/deg²/s] chosen to match Pilly & Seitz (2009) instantaneous density of 0.20 dots/deg²
-                                        # (16.7 dots/deg²/s at 85 Hz → 50 dots/frame); scaled to ~120 Hz: 0.20 × 120 = 24.0 dots/deg²/s → ~51 dots/frame
+            dot_density=24.0,           # [dots/deg²/s] chosen to match both the instantaneous density (0.20 dots/deg²/frame)
+                                        # and dot count (~50 dots/frame) from Pilly & Seitz (2009)
+                                        # Their setup: 0.20 dots/deg²/frame at 85 Hz → ~50 dots/frame
+                                        # At 120 Hz, to preserve the same instantaneous density and dot count:
+                                        # 0.20 dots/deg²/frame × 120 Hz = 24.0 dots/deg²/s → ~51 dots/frame
             dot_speed = 12,             # [deg/s] default; overridden by Experiment based on target_displacement
             frame_rate = 120,           # [Hz] = [frame/s]
             field_diameter = 18.0,      # [deg] diameter of the circular aperture where dots are sampled and respawned;
                                         # passed as the fieldSize parameter to PsychoPy's ElementArrayStim 
             n_sequences=3,              # total number of interleaved sequences
             rng= None,                  # local random generator; if None, a new one is created
-            max_lifetime_frames = 12    # how many video frames a dot stays alive
+            max_lifetime_frames = 36    # how many video frames a dot stays alive (counted every frame, not just when active);
+                                        # since each dot appears once every 3 frames: 36 frames / 3 = 12 appearances before dying.
     ):
         
      
@@ -85,7 +89,7 @@ class RDK:
         # Calculate the number of dots in each sequence (group).
         # All 3 groups have this same size. On any frame, exactly one group
         # (n_dots_in_sequence dots) is drawn on screen.
-        self.n_dots_in_sequence = int(self.n_dots/self.n_sequences)  
+        self.n_dots_in_sequence = self.n_dots // self.n_sequences
         if (self.n_dots_in_sequence * self.n_sequences != self.n_dots):
             raise ValueError("Inconsistent dot counts: n_dots_in_sequence * n_sequences "
                              "must equal n_dots (computed from dot_density, frame_rate and field_diameter).")
@@ -124,7 +128,7 @@ class RDK:
                                         # but the actual sampling from the the circle are handled manually in the code.
             elementMask='circle',       # render each dot as a circle
             sizes=0.08,                 # size of each dot in degrees of visual angle
-            nElements = self.n_dots_in_sequence,    # the number of dots in 1 group, drawn per frame
+            nElements = self.n_dots_in_sequence,    # the number of dots in one group (1/3 of all dots), drawn per frame
             units='deg', 
             fieldSize = self.field_diameter,
             colors=[1, 1, 1],           # dot color (reference: [1,1,1] is max white)
@@ -197,8 +201,8 @@ class RDK:
         # ----- Active dots mask for the current sequence -----
 
         # Create a boolean mask of length n_dots to track which dots belong to the group being updated in the current sequence 
-        # (i.e. dots active on this frame). Initially all values are False; on each frame, 1 out of n_sequences subsets is set to True,
-        # giving exactly n_dots_in_sequence True entries (because n_dots is divisible by n_sequences).  
+        # (i.e. dots active on this frame). Initially all values are False; later, in update_rdk_stim, on each frame, 
+        # 1 out of n_sequences subsets is set to True, giving exactly n_dots_in_sequence True entries (because n_dots is divisible by n_sequences).  
         self.active_dots_mask = np.zeros(self.n_dots, dtype=bool)   
                                                               
         
@@ -276,8 +280,10 @@ class RDK:
         # Mark all dots in the current sequence as active (True)
         self.active_dots_mask[self.current_sequence_index::self.n_sequences] = True    
             # Using the slice [current_sequence_index : end : n_sequences] selects all dots in this sequence
-            # (e.g., for current_sequence_index = 0 and n_sequences = 3 -> indices 0, 3, 6, ...)
+            # (e.g., for current_sequence_index = 0 and n_sequences = 3 -> indices 0, 3, 6, ...).
+            # This always selects exactly n_dots_in_sequence dots (= n_dots / n_sequences).
 
+        
         # ----- Active dots count -----
 
         # Count how many dots are active in the current sequence by counting True values in active_dots_mask
@@ -377,8 +383,8 @@ class RDK:
         self.n_outside_last = n_outside
         self.n_expired_last = n_expired        
 
-        # Create a mask of dots that need to be respawned (either outside the aperture or lifetime-expired)
-        respawn_mask = outside_dots_mask | expired_mask
+        # Create a mask of active dots that need to be respawned (either outside the aperture or lifetime-expired)
+        respawn_mask = (outside_dots_mask | expired_mask) & self.active_dots_mask
         n_respawn = int(np.sum(respawn_mask))
 
         if n_respawn > 0:

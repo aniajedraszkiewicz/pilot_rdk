@@ -46,6 +46,12 @@ prefs.general['waitBlanking'] = True
 # Choose preferred keyboard backend
 prefs.hardware['keyboard'] = PREFERRED_KEYBOARD_BACKEND
 
+# Refresh rate configuration: set this to your monitor's refresh rate (check System Settings → Displays).
+# This value is used directly for stimulus timing; getActualFrameRate() below is only a sanity check — it does NOT override this.
+
+HARDCODED_REFRESH_RATE_HZ = 120.0
+
+
 # Import experiment components
 from .block import Block
 from .rdk_stim import RDK
@@ -329,13 +335,13 @@ class Experiment:
     def measure_refresh_rate(self):
 
         """
-        1. Use PsychoPy getActualFrameRate() when available.
-        2. If rate cannot be measured, display an error on screen and abort.
-        3. Always record raw flip timing for later inspection 
+        Uses HARDCODED_REFRESH_RATE_HZ as the authoritative refresh rate.
+        getActualFrameRate() runs as a sanity check only — it logs a warning
+        if the measured rate differs too much, but never overrides the hardcoded value.
         """
-        # PsychoPy function that measures flip stability across frames and 
-        # returns a refresh rate in Hz if timing is sufficiently stable
-        refresh_rate_hz = self.win.getActualFrameRate(
+        # Sanity check (does NOT set the rate used by the experiment)
+
+        measured= self.win.getActualFrameRate(
             nIdentical=8,
             nMaxFrames=600,
             nWarmUpFrames=100,
@@ -343,34 +349,26 @@ class Experiment:
             infoMsg=None
         )
         
-        if refresh_rate_hz is not None:
-            refresh_rate_hz = float(refresh_rate_hz)
-            self.refresh_rate_method = "getActualFrameRate"
+        if measured is None:
+            print("[WARNING] getActualFrameRate() could not measure a stable rate. "
+              "Proceeding with hardcoded value. Check vsync and display settings.")
         
         else:
-            # Display error on screen so the experimenter sees it clearly
-            msg = visual.TextStim(
-                self.win,
-                text=(
-                    "Could not measure a stable refresh rate.\n\n"
-                    "Please check:\n"
-                    "- Is the monitor set to sync to vertical blank (vsync)?\n"
-                    "- Are other applications running?\n"
-                    "- Is the monitor refresh rate set correctly in system settings?\n\n"
-                    "Press ESC to quit."
-                ),
-                height=0.7, color="white", wrapWidth=20
-            )
-            self.kb.clearEvents()
-            while True:
-                msg.draw()
-                self.win.flip()
-                if self.kb.getKeys(keyList=["escape"], clear=True):
-                    self.win.close()
-                    core.quit()
-                    return
+            diff = abs(measured - HARDCODED_REFRESH_RATE_HZ)
+            if diff > 2.0:
+                print(f"[WARNING] getActualFrameRate() returned {measured:.2f} Hz, "
+                    f"but hardcoded rate is {HARDCODED_REFRESH_RATE_HZ} Hz "
+                    f"(difference: {diff:.2f} Hz). "
+                    f"Check System Settings → Displays before running the experiment.")
+            else:
+                print(f"[OK] getActualFrameRate() returned {measured:.2f} Hz — "
+                    f"consistent with hardcoded {HARDCODED_REFRESH_RATE_HZ} Hz.")
                       
-        # Store flip-to-flip durations using the built-in function (seconds)
+        # Use hardcoded rate for all stimulus timing 
+        refresh_rate_hz = HARDCODED_REFRESH_RATE_HZ
+        self.refresh_rate_method = "hardcoded"
+
+        # Record flip timing for later inspection. Store flip-to-flip durations using the built-in function (seconds)
         self.win.recordFrameIntervals = True
         self.win.frameIntervals = []  # clear any previous data
 
@@ -385,7 +383,6 @@ class Experiment:
         # Safety check (need at least 2 timestamps to form at least 1 interval)
         if len(frame_times) <= 1:
             print("[ERROR] Flip timing failed (not enough timestamps).")
-            print("Display timing is unreliable. Aborting experiment.")
             self.win.close()
             core.quit()
 
@@ -464,7 +461,7 @@ class Experiment:
             f.write(self._section("DISPLAY TIMING"))
 
             # Single refresh rate used by the experiment
-            f.write(self._line("Measured refresh rate used (Hz):", f"{self.measured_rate:.2f}"))
+            f.write(self._line("Hardcoded refresh rate used (Hz):", f"{self.measured_rate:.2f}"))
 
             f.write(self._line("Refresh rate estimation method:", getattr(self, "refresh_rate_method", "None")))
 
