@@ -1,14 +1,18 @@
 import csv
-
+from unittest.mock import MagicMock
 from experiment_files.block import Block
 
 
-def test_append_log_row_creates_and_appends(tmp_path):
+def test_append_log_row_creates_and_appends(tmp_path, monkeypatch):
     """
     Block.append_log_row() should:
     1) create the CSV (write header) on first call
     2) append rows on subsequent calls (no overwrite)
     """
+    # Block.__init__ calls visual.Circle(win=...) which needs a real window.
+    # Patch it out so we can create a Block with win=None in tests.
+    import experiment_files.block as block_mod
+    monkeypatch.setattr(block_mod.visual, "Circle", lambda *a, **k: MagicMock())
 
     csv_path = tmp_path / "results.csv"
     header = ["a", "b", "c"]

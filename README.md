@@ -12,8 +12,8 @@ This **pilot version uses QUEST** (a Bayesian adaptive procedure) to select moti
 Main folder containing the experiment code, input files, outputs, and tests.
 
 Core logic:
-- **`experiment.py`** – high-level controller: environment setup, monitor/window creation, participant info collection, refresh-rate measurement, parameter definition (including density correction), stimulus initialization, and run summary saving.
-- **`block.py`** – runs a single block: shows instructions, runs fixation and trial flow, handles QUEST updates, and appends results to CSV.
+- **`experiment.py`** – high-level controller: environment setup, monitor/window creation, participant info collection, parameter definition (including density correction), stimulus initialization, and run summary saving.
+- **`block.py`** – runs all trials in the block: shows instructions, runs fixation and trial flow, handles QUEST updates, and appends results to CSV.
 - **`single_trial.py`** – runs a single trial: stimulus loop (draw/flip), response collection, and timing measurements (stimulus-locked RTs and flip timing diagnostics).
 - **`rdk_stim.py`** – RDK stimulus generation and frame-by-frame dot updates.
 - **`helpers.py`** – helper utilities (e.g., instruction text, loading trial files if used).

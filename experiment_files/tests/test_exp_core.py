@@ -152,6 +152,11 @@ class FakeRDK:
         self.field_radius = self.field_diameter / 2.0
         self.dots_stim = SimpleNamespace(nElements=self.n_dots)
 
+        # Precomputed geometry values written by write_summary()
+        self.spatial_displacement = self.dot_speed / self.frame_rate * self.n_sequences
+        self.temporal_displacement = self.n_sequences / self.frame_rate * 1000.0
+        self.instantaneous_dot_density = self.dot_density / self.frame_rate
+
 
 class FakeBlock:
     """Only needed if run_experiment() is tested later."""
@@ -346,8 +351,8 @@ def test_measure_and_define_parameters_sets_speed_and_density(exp_mod, monkeypat
     exp.measure_and_define_parameters()
 
     assert abs(exp.measured_rate - 120.0) < 1e-12
-    assert abs(exp.dot_speed - 5.0) < 1e-12
-    assert abs(exp.dot_density - 0.55) < 1e-12
+    assert abs(exp.dot_speed - (0.28 * 120.0 / 3.0)) < 1e-12
+    assert abs(exp.dot_density - 24.0) < 1e-12
 
 
 def test_initialize_stimulus_creates_deterministic_seed_and_rdk(tmp_path, exp_mod, monkeypatch):
@@ -401,7 +406,7 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
 
     # stimulus/timing fields written by write_summary()
     exp.measured_rate = 120.0
-    exp.refresh_rate_method = "getActualFrameRate"
+    exp.refresh_rate_method = "hardcoded"
     exp.dot_speed = 5.0
     exp.dot_density = 0.55
     exp.keyboard_backend_used = exp.keyboard_backend_preferred
@@ -426,7 +431,7 @@ def test_write_summary_creates_file_and_contains_expected_fields(tmp_path, exp_m
     assert "RDK STIMULUS" in txt
     assert "ENVIRONMENT" in txt
     assert "Run ID:" in txt
-    assert "Measured refresh rate used (Hz):" in txt
+    assert "Hardcoded refresh rate used (Hz):" in txt
     assert "PsychoPy version:" in txt
     assert "Screen width (cm):" in txt
     assert "Viewing distance (cm):" in txt

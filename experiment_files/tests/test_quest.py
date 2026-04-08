@@ -2,10 +2,10 @@
 Unit tests for QUEST-based Block using safe mocks (no PsychoPy windows).
 
 Tests included:
-1) QUEST initialization sanity (matches Block.run_block params)
+1) QUEST initialization sanity (matches Block.run_quest_block params)
 2) QUEST intensity bounds
 3) QUEST convergence sanity (not strict)
-4) Block.run_block() with mocked Trial + mocked fixation (expects 64 trials)
+4) Block.run_quest_block() with mocked Trial + mocked fixation (expects 64 trials)
 """
 
 from __future__ import annotations
@@ -109,6 +109,10 @@ def test_block_run_block_with_mock_trial_64_trials(tmp_path, monkeypatch):
     """
     import experiment_files.block as block_mod
 
+    # Block.__init__ calls visual.Circle(win=...) which needs a real window.
+    # Patch it out so we can create a Block with a fake window in tests.
+    monkeypatch.setattr(block_mod.visual, "Circle", lambda *a, **k: MagicMock())
+
     # Fake window + keyboard (Block.show_fixation won't be used for real timing)
     fake_win = MagicMock()
     fake_kb = MagicMock()
@@ -122,7 +126,7 @@ def test_block_run_block_with_mock_trial_64_trials(tmp_path, monkeypatch):
 
     # Fake Trial aligned with current Trial.run_single_trial output keys
     class FakeTrial:
-        def __init__(self, win, kb, rdk, max_stim_sec, debug=True):
+        def __init__(self, win, kb, rdk, max_stim_sec, fixation_stim=None, debug=True):
             self.max_stim_sec = float(max_stim_sec)
 
         def run_single_trial(self, direction, coherence):
@@ -185,7 +189,7 @@ def test_block_run_block_with_mock_trial_64_trials(tmp_path, monkeypatch):
 
     block.show_fixation = fast_show_fixation
 
-    diagnostics = block.run_block()
+    diagnostics = block.run_quest_block()
 
     # 64 trials
     assert len(diagnostics["responses"]) == 64
