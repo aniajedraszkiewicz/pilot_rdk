@@ -138,10 +138,9 @@ class Trial:
             # Draw the dot stimulus into the back buffer (nothing is visible until flip())
             self.rdk.dots_stim.draw()
 
-            # Draw fixation on top of dots every frame (keeps it permanently visible)
+            # Draw fixation dot on top of dots every frame (keeps it permanently visible)
             if self.fixation_stim is not None:
                 self.fixation_stim.draw()
-
 
             # Flip buffers and capture the absolute flip timestamp for this displayed frame
             flip_time = self.win.flip()

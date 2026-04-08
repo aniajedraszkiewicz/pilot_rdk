@@ -10,15 +10,21 @@ from .helpers import get_block_intro_text, get_block_outro_text
 
 class Block:
     """
-    This class runs one block of trials. It uses the Trial class, and also:
+    This class runs the full sequence of trial blocks in the experiment. It uses the Trial class, and also:
         - shows the block intro screen,
-        - shows a fixation dot before each trial,
-        - controls the between-trial sequence (fixation → choose coherence/direction → run Trial → check correctness → log),
+        - shows a fixation dot during each trial,
+        - controls the between-trial sequence (choose coherence/direction → run Trial → check correctness → log),
         - marks responses as correct/incorrect,
         - updates the QUEST posterior based on trial outcomes to adaptively select
           the coherence level for the next trial,
         - randomizes direction using a local, seeded RNG (separate from the dot RNG),
         - returns basic QUEST diagnostics at the end of the block.
+
+     The sequence of blocks is:
+        1. Practice block (coherence 0.7, with feedback) — repeated once if accuracy < 75%
+        2. Practice block (coherence 0.4, with feedback) — repeated once if accuracy < 75%
+        3. Validation block (4 fixed coherence levels, random order, no feedback)
+        4. QUEST adaptive block (coherence selected adaptively, no feedback)
     
     QUEST (Guénot et al., 2023): Bayesian adaptive method that chooses coherence each trial to estimate
     the coherence threshold corresponding to a target performance level of approximately 75% correct.
@@ -137,7 +143,8 @@ class Block:
 
     # ------------------------ Show fixation and store timing ------------------------
 
-    # Show a fixation dot for a fixed duration and store its timing
+    # Show the fixation dot for a fixed pre-trial duration (inter-trial interval).
+    # The same dot continues to be drawn during the RDK trial itself (handled in Trial).
     def show_fixation(self, seconds=1.0):
         txt = self.fixation_stim
         clock = core.Clock()
@@ -147,7 +154,6 @@ class Block:
         self.kb.clearEvents()
 
         # Store first/last flip times to check how long fixation really stayed on screen.
-        # The requested duration is a target; the true duration is quantized by frames
         fix_onset_time = None
         fix_offset_time = None
 
@@ -179,7 +185,7 @@ class Block:
     # ------------------------ Practice block with feedback ------------------------
 
     # Run a practice block with trial-by-trial feedback. Each trial uses a fixed coherence level. 
-    # After every trial, the participant sees brief feedback ("Correct" / "Incorrect"). Practice ends after 40 trials
+    # After every trial, the participant sees brief feedback ("Correct" / "Incorrect"). 
 
     def run_practice_block(
         self,
@@ -368,7 +374,7 @@ class Block:
         self.rng.shuffle(trial_coherences)
 
         
-        # Reuse the same Trial runner as the main block
+        # Reuse the same Trial runner 
         trial_runner = Trial(
             self.win, self.kb, self.rdk,
             self.max_stim_sec, fixation_stim=self.fixation_stim,debug=self.debug)
@@ -400,7 +406,6 @@ class Block:
 
             # Score response
             correct_key = "right" if direction == 0 else "left"
-
 
 
             # Mark response as correct or incorrect
@@ -698,11 +703,10 @@ class Block:
 
         return diagnostics
     
-    # -------------------- Complete Adaptive Pilot ------------------
+    # -------------------- Complete pilot ------------------
 
     def run_adaptive_pilot(self):
 
-        
         practice_07 = self.run_practice_block(practice_coherence=0.7, trials=20)
         if practice_07["final_accuracy"] < 0.75:
             practice_07_extra = self.run_practice_block(practice_coherence=0.7, trials=20)
