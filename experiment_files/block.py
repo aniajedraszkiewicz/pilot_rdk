@@ -145,8 +145,20 @@ class Block:
 
     # Show the fixation dot for a fixed pre-trial duration (inter-trial interval).
     # The same dot continues to be drawn during the RDK trial itself (handled in Trial).
-    def show_fixation(self, seconds=1.0):
+    def show_fixation(self, seconds=1.0, post_response_pause_sec=0.6):
         txt = self.fixation_stim
+        
+        # 600ms pause after response, fixation dot visible but not logged
+        pause_clock = core.Clock()
+        while pause_clock.getTime() < float(post_response_pause_sec):
+            if self.kb.getKeys(keyList=["escape"], clear=True):
+                self.win.close()
+                core.quit()
+                return
+            txt.draw()
+            self.win.flip()
+        
+        
         clock = core.Clock()
         clock.reset()
         
@@ -179,6 +191,7 @@ class Block:
             "fix_offset_time": fix_offset_time, # last fixation flip time
             "fix_duration": (fix_offset_time - fix_onset_time) if fix_onset_time is not None else None,
             "fix_target_sec": float(seconds), # requested duration (target)
+            "post_response_pause_sec": float(post_response_pause_sec)
         }
     
 
@@ -215,7 +228,12 @@ class Block:
 
             # Fixation 
             self.last_fix = None
-            fix_sec = 0.5 + self.rng.random() * 0.5  # jittered [0.5, 1.0] to allow refixation and prevent temporal anticipation
+
+            # Truncated exponential: mean ~0.7s, range [0.3, 3.0] s
+            while True:
+                fix_sec = self.rng.exponential(scale=0.7)
+                if 0.3 <= fix_sec <= 3.0:
+                    break # jittered exponentially to allow refixation and prevent temporal anticipation
             self.show_fixation(seconds=fix_sec)
             if self.last_fix is None:
                 break                      # ESC was pressed during fixation
@@ -272,6 +290,7 @@ class Block:
                 "fix_offset_time":            fix.get("fix_offset_time"),
                 "fix_duration":               fix.get("fix_duration"),
                 "fix_target_sec":             fix.get("fix_target_sec"),
+                "post_response_pause_sec":    fix.get("post_response_pause_sec"),
             }
             self.append_log_row(self.results_csv_path, row, self.results_header)
 
@@ -387,7 +406,13 @@ class Block:
 
             # Fixation 
             self.last_fix = None
-            fix_sec = 0.5 + self.rng.random() * 0.5  # jittered [0.5, 1.0] to allow refixation and prevent temporal anticipation
+            
+            # Truncated exponential: mean ~0.7s, range [0.3, 3.0] s
+            while True:
+                fix_sec = self.rng.exponential(scale=0.7)
+                if 0.3 <= fix_sec <= 3.0:
+                    break # jittered exponentially to allow refixation and prevent temporal anticipation
+
             self.show_fixation(seconds=fix_sec)
             if self.last_fix is None:
                 break                      # ESC was pressed during fixation
@@ -448,6 +473,7 @@ class Block:
                 "fix_offset_time":            fix.get("fix_offset_time"),
                 "fix_duration":               fix.get("fix_duration"),
                 "fix_target_sec":             fix.get("fix_target_sec"),
+                "post_response_pause_sec":    fix.get("post_response_pause_sec"),
             }
             self.append_log_row(self.results_csv_path, row, self.results_header)
  
@@ -545,7 +571,13 @@ class Block:
 
             # Reset fixation timing from the previous trial, then show fixation and store its timing in self.last_fix
             self.last_fix = None
-            fix_sec = 0.5 + self.rng.random() * 0.5  # jittered [0.5, 1.0] to allow refixation and prevent temporal anticipation
+            
+            # Truncated exponential: mean ~0.7s, range [0.3, 3.0] s
+            while True:
+                fix_sec = self.rng.exponential(scale=0.7)
+                if 0.3 <= fix_sec <= 3.0:
+                    break # jittered exponentially to allow refixation and prevent temporal anticipation
+            
             self.show_fixation(seconds=fix_sec)
 
 
@@ -634,6 +666,7 @@ class Block:
                 "fix_offset_time": fix["fix_offset_time"],
                 "fix_duration": fix["fix_duration"],
                 "fix_target_sec": fix["fix_target_sec"],
+                "post_response_pause_sec": fix.get("post_response_pause_sec"),
             }
             
             # Append this trial row to the results CSV 

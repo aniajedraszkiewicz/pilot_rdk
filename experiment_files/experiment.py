@@ -49,7 +49,7 @@ prefs.hardware['keyboard'] = PREFERRED_KEYBOARD_BACKEND
 # Refresh rate configuration: set this to your monitor's refresh rate (check System Settings → Displays).
 # This value is used directly for stimulus timing; getActualFrameRate() below is only a sanity check — it does NOT override this.
 
-HARDCODED_REFRESH_RATE_HZ = 60.0
+HARDCODED_REFRESH_RATE_HZ = 120.0
 
 
 # Import experiment components
@@ -328,7 +328,7 @@ class Experiment:
         
         # dot appears once every n_sequences frames, so displacement per frame:
         self.dot_speed = target_displacement * self.measured_rate / 3.0  # auto-corrects for any Hz
-        self.dot_density = 12.0                                          # dots/deg²/s 
+        self.dot_density = 24.0                                         # dots/deg²/s 
 
         # Print a quick sanity check
         print(f"Measured refresh rate: {self.measured_rate:.2f} Hz")
@@ -523,7 +523,7 @@ class Experiment:
             "stimulus_on_screen_duration",
             "frame_count","estimated_fps", "n_long_frames",
             "max_flip_interval" ,
-            "fix_onset_time","fix_offset_time","fix_duration","fix_target_sec",
+            "fix_onset_time","fix_offset_time","fix_duration","fix_target_sec","post_response_pause_sec",
         ]
         
         # Single block for now (extend to multiple blocks later if needed)
