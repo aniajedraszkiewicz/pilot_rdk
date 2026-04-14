@@ -234,7 +234,8 @@ class Block:
                 fix_sec = self.rng.exponential(scale=0.7)
                 if 0.3 <= fix_sec <= 3.0:
                     break # jittered exponentially to allow refixation and prevent temporal anticipation
-            self.show_fixation(seconds=fix_sec)
+            
+            self.show_fixation(seconds=fix_sec, post_response_pause_sec=0.0)
             if self.last_fix is None:
                 break                      # ESC was pressed during fixation
 
@@ -294,10 +295,10 @@ class Block:
             }
             self.append_log_row(self.results_csv_path, row, self.results_header)
 
-            # Show feedback for 500ms 
+            # Show feedback for 600ms 
             fb = feedback_correct if is_correct else feedback_incorrect
             feedback_end = core.Clock()
-            while feedback_end.getTime() < 0.5:
+            while feedback_end.getTime() < 0.6:
                 self.fixation_stim.draw()
                 fb.draw()
                 self.win.flip()

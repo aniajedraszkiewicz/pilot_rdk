@@ -34,7 +34,7 @@ class RDK:
                                         # At 120 Hz, to preserve the same instantaneous density and dot count:
                                         # 0.20 dots/deg²/frame × 120 Hz = 24.0 dots/deg²/s → ~51 dots/frame
             dot_speed = 12,             # [deg/s] default; overridden by Experiment based on target_displacement
-            frame_rate = 120,            # [Hz] = [frame/s]
+            frame_rate = 120,           # [Hz] = [frame/s]
             field_diameter = 18.0,      # [deg] diameter of the circular aperture where dots are sampled and respawned;
                                         # passed as the fieldSize parameter to PsychoPy's ElementArrayStim 
             n_sequences=3,              # total number of interleaved sequences

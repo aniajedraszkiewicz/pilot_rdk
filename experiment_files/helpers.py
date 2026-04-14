@@ -44,7 +44,8 @@ def get_block_intro_text(block_no, lang="en"):
                     "In the later parts, no feedback will be given.\n\n"
                     "Sometimes the task will be easier, sometimes harder — this is normal.\n\n"
                     "Important: keep your eyes on the green dot in the center of the screen at all times.\n"
-                    "Do not track individual moving dots."
+                    "Do not track individual moving dots.\n\n"
+                    "Keep your fingers on the arrow keys at all times."
                     ),
                 2: "Main task. Trials are randomized.",
                 3: "Main task. Trials are randomized.",
@@ -72,7 +73,8 @@ def get_block_intro_text(block_no, lang="en"):
                     "W kolejnych częściach ta informacja nie będzie wyświetlana.\n\n"
                     "Czasem zadanie będzie łatwiejsze, czasem trudniejsze — to naturalne.\n\n"
                     "Ważne: przez cały czas patrz na zieloną kropkę pośrodku ekranu.\n"
-                    "Nie śledź wzrokiem pojedynczych poruszających się kropek."
+                    "Nie śledź wzrokiem pojedynczych poruszających się kropek.\n\n"
+                    "Trzymaj palce na klawiszach strzałek przez cały czas trwania zadania."
                     
                 ),
                 2: "Główne zadanie.",
