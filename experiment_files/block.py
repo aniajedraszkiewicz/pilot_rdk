@@ -224,6 +224,9 @@ class Block:
 
         results = []   # stores 1 (correct) or 0 (incorrect) for each trial
 
+        self.win.frameIntervals = []
+        self.win.recordFrameIntervals = True
+
         for trial_index in range(trials):
 
             # Fixation 
@@ -302,6 +305,11 @@ class Block:
                 self.fixation_stim.draw()
                 fb.draw()
                 self.win.flip()
+
+        
+        self.win.recordFrameIntervals = False
+        base = self.results_csv_path.replace(".csv", "")
+        np.savetxt(f"{base}_frame_intervals_practice_{int(practice_coherence*100)}.txt", self.win.frameIntervals)
 
 
         # Calculate final accuracy across all trials
@@ -402,6 +410,8 @@ class Block:
         results = []   # stores 1 (correct) or 0 (incorrect) for each trial
         correct_by_level = {coh: [] for coh in validation_coherences}  # per-level correctness
 
+        self.win.frameIntervals = []
+        self.win.recordFrameIntervals = True
 
         for trial_index, coherence in enumerate(trial_coherences):
 
@@ -478,6 +488,11 @@ class Block:
             }
             self.append_log_row(self.results_csv_path, row, self.results_header)
  
+
+        self.win.recordFrameIntervals = False
+        base = self.results_csv_path.replace(".csv", "")
+        np.savetxt(f"{base}_frame_intervals_validation.txt", self.win.frameIntervals)
+        
         # Calculate final accuracy across all trials
         final_accuracy = float(np.mean(results)) if results else 0.0
 
@@ -564,6 +579,9 @@ class Block:
         # Here, intensity = log10(coherence), so convert via coherence = 10**intensity.
         # startVal / minVal / maxVal are specified in log10(coherence) units.
         # quest.mean() returns a threshold estimate in log10(coherence).
+        self.win.frameIntervals = []
+        self.win.recordFrameIntervals = True
+        
         for trial_index, intensity in enumerate(quest):
 
             # Convert QUEST "intensity" to the coherence used by the stimulus
@@ -735,6 +753,10 @@ class Block:
             "bias_specificity_right": float(bias_specificity_right),
         }
 
+        self.win.recordFrameIntervals = False
+        base = self.results_csv_path.replace(".csv", "")
+        np.savetxt(f"{base}_frame_intervals_quest.txt", self.win.frameIntervals)
+        
         return diagnostics
     
     # -------------------- Complete pilot ------------------
