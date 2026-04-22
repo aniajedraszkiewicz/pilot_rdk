@@ -33,7 +33,7 @@ class RDK:
                                         # Their setup: 0.20 dots/deg²/frame at 85 Hz → ~50 dots/frame
                                         # At 120 Hz, to preserve the same instantaneous density and dot count:
                                         # 0.20 dots/deg²/frame × 120 Hz = 24.0 dots/deg²/s → ~51 dots/frame
-            dot_speed = 12,             # [deg/s] default; overridden by Experiment based on target_displacement
+            dot_speed = 11,             # [deg/s] default; overridden by Experiment based on target_displacement
             frame_rate = 120,           # [Hz] = [frame/s]
             field_diameter = 18.0,      # [deg] diameter of the circular aperture where dots are sampled and respawned;
                                         # passed as the fieldSize parameter to PsychoPy's ElementArrayStim 
@@ -127,7 +127,7 @@ class RDK:
             fieldShape='circle',        # documents that this stimulus is intended as a circular field,
                                         # but the actual sampling from the the circle are handled manually in the code.
             elementMask='circle',       # render each dot as a circle
-            sizes=0.08,                 # size of each dot in degrees of visual angle
+            sizes=0.10,                 # size of each dot in degrees of visual angle
             nElements = self.n_dots_in_sequence,    # the number of dots in one group (1/3 of all dots), drawn per frame
             units='deg', 
             fieldSize = self.field_diameter,

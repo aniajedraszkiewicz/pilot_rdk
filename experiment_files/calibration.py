@@ -4,29 +4,29 @@ Run with:
     python -m experiment_files.calibration
 """
 
+import sys
 import numpy as np
-from psychopy import visual, core, event, gui
+from psychopy import visual, event, gui, core
 
 from .experiment import Experiment
 
 
-def run_calibration(theta_deg=10.0, fullscr=True):
+def run_calibration(theta_deg=10.0):
     exp = Experiment()
 
-    # Override defaults for this machine (optional)
-    exp.expInfo["screen_width_cm"] = "31.0"
-    exp.expInfo["viewing_distance_cm"] = "57.0"
-    exp.expInfo["fullscr"] = True  # keep simple default for GUI
+    # Remove participant field — not needed for calibration
+    exp.expInfo.pop("participant", None)
 
-    # Show the same-style dialog as the experiment
+    # Dialog appears on MacBook built-in (unavoidable).
+    # Select screen_no = 0 for external monitor, 1 for MacBook built-in.
     dlg = gui.DlgFromDict(exp.expInfo, title="Geometry Calibration")
     if not dlg.OK:
-        core.quit()
+        sys.exit(0)
 
-    # Match experiment semantics: create_window_and_monitor reads exp.expInfo + exp.fullscr
+    # Pass fullscr choice from dialog into exp before creating the window
     exp.fullscr = bool(exp.expInfo.get("fullscr", True))
 
-    # Reuse the experiment’s window/monitor logic (Retina handling, sizePix logic, etc.)
+    # Reuse the experiment's window/monitor logic (Retina handling, sizePix logic, etc.)
     exp.create_window_and_monitor()
 
     d_cm = float(exp.viewing_distance_cm)
@@ -59,26 +59,23 @@ def run_calibration(theta_deg=10.0, fullscr=True):
         color="white",
     )
 
-    # Draw once immediately so something is visible even if key focus is delayed
     line.draw()
     msg.draw()
     exp.win.flip()
 
-    # Wait for a decision key (more robust than polling loops)
     key = event.waitKeys(keyList=["c", "r", "q", "escape"])[0]
 
-    if key in ("q", "escape"):
-        exp.win.close()
-        core.quit()
-
-    if key == "c":
-        print("Geometry confirmed.")
-    elif key == "r":
-        print("Geometry mismatch reported.")
-
     exp.win.close()
-    core.quit()
+
+    if key in ("q", "escape"):
+        print("[QUIT] Calibration cancelled.")
+    elif key == "c":
+        print("[OK] Geometry confirmed.")
+    elif key == "r":
+        print("[MISMATCH] Geometry mismatch — check screen_width_cm and viewing_distance_cm.")
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    run_calibration(theta_deg=10.0, fullscr=True)
+    run_calibration(theta_deg=10.0)

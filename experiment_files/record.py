@@ -1,8 +1,22 @@
 import numpy as np
 from psychopy import visual, core, event, monitors
 
-from rdk_stim import RDK
+from experiment_files.rdk_stim import RDK
 
+
+# ── CHANGED: all parameters now match experiment.py exactly ─────────────────
+HARDCODED_REFRESH_RATE_HZ = 120.0
+SCREEN_WIDTH_CM           = 52.4
+VIEWING_DISTANCE_CM       = 57.0
+SCREEN_NO                 = 0
+SCREEN_RES                = (1920, 1080)
+TARGET_DISPLACEMENT       = 0.28
+DOT_SPEED                 = TARGET_DISPLACEMENT * HARDCODED_REFRESH_RATE_HZ / 3.0
+DOT_DENSITY               = 24.0
+FIELD_DIAMETER            = 18.0
+N_SEQUENCES               = 3
+MAX_LIFETIME_FRAMES       = 36
+DOT_SIZE_DEG              = 0.11
 
 def measure_refresh_rate(win):
     """Measure actual refresh rate if possible; fall back to 120 Hz."""
@@ -115,7 +129,7 @@ def main():
         field_diameter=18.0,
         n_sequences=3,
         rng=None,
-        max_lifetime_frames=12
+        max_lifetime_frames=36
     )
 
     label = visual.TextStim(

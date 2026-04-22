@@ -208,9 +208,12 @@ class Experiment:
         self.keyboard_backend_preferred = PREFERRED_KEYBOARD_BACKEND
         self.expInfo = {
         "participant": "",
-        "screen_width_cm": "47.2",
+        "screen_width_cm": "52.4",
         "viewing_distance_cm": "57.0",
-        "fullscr": [True, False],}
+        "fullscr": [True, False],
+        "screen_no": ["0", "1"],   # 0 = main display (your external monitor), 1 = MacBook built-in
+        }
+        
 
     
     # Run all preparation steps in a fixed order (GUI → Window → calibration → stimulus)
@@ -272,12 +275,16 @@ class Experiment:
         mon.setSizePix((800, 600))               
            
         self.mon = mon
-           
+        screen_no = int(self.expInfo.get("screen_no", 0))
+        print(f"[WINDOW] Opening on screen {screen_no} "
+            f"({'main external monitor' if screen_no == 0 else 'MacBook built-in'})")
+  
         # Create the PsychoPy Window; now the real pixel size becomes available via win.size
         self.win = visual.Window(
             monitor=mon,
             units="deg",
             fullscr=self.fullscr,
+            screen=screen_no,
             color=[-1, -1, -1],
             colorSpace='rgb',
             waitBlanking=True,   # try to sync flips to the monitor refresh (vsync) for more stable frame timing

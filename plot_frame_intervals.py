@@ -20,10 +20,10 @@ RESULTS_DIR = "/Users/annajedraszkiewicz/dokumenty/programming_projects/pilot_rd
 
 # list the exact filenames you want to plot (just the filenames, not full paths)
 FILES = [
-    "20260420_121905_fbac_frame_intervals_practice_70.txt",
-    "20260420_121905_fbac_frame_intervals_practice_40.txt",
-    "20260420_121905_fbac_frame_intervals_validation.txt",
-    "20260420_121905_fbac_frame_intervals_quest.txt",
+    "20260422_151817_191c_frame_intervals_practice_70.txt",
+    "20260422_151817_191c_frame_intervals_practice_40.txt",
+    "20260422_151817_191c_frame_intervals_validation.txt",
+    "200260422_151817_191c_frame_intervals_quest.txt",
 ]
 
 # ============================================================
