@@ -203,19 +203,19 @@ class Experiment:
     - saving trial-level data and run metadata (e.g., summary file, diagnostic plots) 
     """
     
-    # Define the fields shown in the startup GUI dialog 
+   # Define the fields shown in the startup GUI dialog 
     def __init__(self):
         self.keyboard_backend_preferred = PREFERRED_KEYBOARD_BACKEND
         self.expInfo = {
-        "participant": "",
-        "wiek":"",
-        "płeć":"",
-        "wzrok":"",
-        "inne info":"",
-        "screen_width_cm": "52.4",
-        "viewing_distance_cm": "57.0",
-        "fullscr": [True, False],
-        "screen_no": ["0", "1"],   # 0 = main display (your external monitor), 1 = MacBook built-in
+            "participant": "",
+            "wiek": "",
+            "płeć": "",
+            "wzrok": "",
+            "inne info": "",
+            "fullscr": [True, False],
+            "screen_no": ["0", "1"],   # 0 = main display (your external monitor), 1 = MacBook built-in
+            "screen_width_cm": "52.4",
+            "viewing_distance_cm": "57.0",
         }
         
 
@@ -235,7 +235,11 @@ class Experiment:
         )
        
         # Show GUI; user inputs are written back into self.expInfo
-        dlg = gui.DlgFromDict(self.expInfo, title='RDK Display Settings')
+        dlg = gui.DlgFromDict(
+            self.expInfo,
+            title='RDK Display Settings',
+            order=["participant", "wiek", "płeć", "wzrok", "inne info",
+                "fullscr", "screen_no", "screen_width_cm", "viewing_distance_cm"])
         if not dlg.OK:
             core.quit()
 
