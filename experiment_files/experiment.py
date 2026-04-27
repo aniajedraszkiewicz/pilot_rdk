@@ -208,6 +208,10 @@ class Experiment:
         self.keyboard_backend_preferred = PREFERRED_KEYBOARD_BACKEND
         self.expInfo = {
         "participant": "",
+        "wiek":"",
+        "płeć":"",
+        "wzrok":"",
+        "inne info":"",
         "screen_width_cm": "52.4",
         "viewing_distance_cm": "57.0",
         "fullscr": [True, False],
@@ -246,6 +250,12 @@ class Experiment:
 
         # Store fullscreen choice.
         self.fullscr = bool(self.expInfo.get("fullscr", True))
+
+        # Store participant demographics from dialog
+        self.participant_age   = str(self.expInfo.get("wiek", "")).strip()
+        self.participant_sex   = str(self.expInfo.get("płeć", "")).strip()
+        self.participant_vision = str(self.expInfo.get("wzrok", "")).strip()
+        self.participant_notes = str(self.expInfo.get("inne info", "")).strip()
 
         # Prepare output location and a unique run identifier
         os.makedirs("results", exist_ok=True)
@@ -463,6 +473,10 @@ class Experiment:
             f.write("RUN SUMMARY\n")
             f.write("=" * 60 + "\n")
             f.write(self._line("Participant:", self.subject_id))
+            f.write(self._line("Age:", self.participant_age))
+            f.write(self._line("Sex:", self.participant_sex))
+            f.write(self._line("Vision:", self.participant_vision))
+            f.write(self._line("Notes:", self.participant_notes))
             f.write(self._line("Timestamp:", datetime.now().isoformat(timespec="seconds")))
             f.write(self._line("Run ID:", self.run_id))
 
