@@ -4,7 +4,7 @@
 # PsychoPy reads some settings at import-time, so environment variables that affect
 # backends must be set BEFORE importing psychopy.
 
-import os, sys, re
+import os, sys, re, traceback
 
 # Preferred keyboard backend is passed in from the launcher file.
 # "ptb" for PsychoPy Standalone
@@ -45,6 +45,8 @@ prefs.general['waitBlanking'] = True
 
 # Choose preferred keyboard backend
 prefs.hardware['keyboard'] = PREFERRED_KEYBOARD_BACKEND
+core.rush(False)  # explicitly prevent PTB from elevating process priority,
+                  # which can cause unrecoverable freezes on macOS
 
 # Refresh rate configuration: set this to your monitor's refresh rate (check System Settings → Displays).
 # This value is used directly for stimulus timing; getActualFrameRate() below is only a sanity check — it does NOT override this.
@@ -260,6 +262,7 @@ class Experiment:
         self.participant_sex   = str(self.expInfo.get("płeć", "")).strip()
         self.participant_vision = str(self.expInfo.get("wzrok", "")).strip()
         self.participant_notes = str(self.expInfo.get("inne info", "")).strip()
+        
 
         # Prepare output location and a unique run identifier
         os.makedirs("results", exist_ok=True)
@@ -293,12 +296,13 @@ class Experiment:
         print(f"[WINDOW] Opening on screen {screen_no} "
             f"({'main external monitor' if screen_no == 0 else 'MacBook built-in'})")
   
+        self.screen_no = screen_no
         # Create the PsychoPy Window; now the real pixel size becomes available via win.size
         self.win = visual.Window(
             monitor=mon,
             units="deg",
             fullscr=self.fullscr,
-            screen=screen_no,
+            screen=self.screen_no,
             color=[-1, -1, -1],
             colorSpace='rgb',
             waitBlanking=True,   # try to sync flips to the monitor refresh (vsync) for more stable frame timing
@@ -489,6 +493,8 @@ class Experiment:
 
             # Single refresh rate used by the experiment
             f.write(self._line("Hardcoded refresh rate used (Hz):", f"{self.measured_rate:.2f}"))
+            f.write(self._line("Screen type (0 - external LEGION, 1 - MacBook):", self.screen_no))
+
 
             f.write(self._line("Refresh rate estimation method:", getattr(self, "refresh_rate_method", "None")))
 
@@ -703,14 +709,24 @@ if __name__ == "__main__":
     # create the top-level experiment controller
     exp = Experiment()
     
-    # prepare GUI/window/calibration/stimulus
-    exp.setup()
-    
-    # run block(s) and save outputs
-    exp.run_experiment()
+    try:
+        # prepare GUI/window/calibration/stimulus
+        exp.setup()
+        
+        # run block(s) and save outputs
+        exp.run_experiment()
 
-    # close window and quit
-    exp.close_exp()
+    except Exception as e:
+        # print the error and full traceback to the console so you know what went wrong
+        print(f"[CRASH] Unhandled exception: {e}")
+        traceback.print_exc()
 
+    finally:
+        # close window and quit — runs always, even after a crash
+        try:
+            exp.win.close()
+        except Exception:
+            pass
+        core.quit()
    
 
